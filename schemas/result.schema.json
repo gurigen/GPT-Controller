@@ -3,16 +3,59 @@
   "$id": "https://q-agent-v4.local/schema/result-v4.json",
   "title": "GPT Controller Result",
   "type": "object",
-  "required": ["protocol", "action_id", "agent_id", "started_at", "finished_at", "status", "steps"],
+  "required": [
+    "protocol",
+    "action_id",
+    "agent_id",
+    "started_at",
+    "finished_at",
+    "status",
+    "steps"
+  ],
   "properties": {
-    "protocol": {"const": "q-agent-v4-result"},
-    "action_id": {"type": "string"},
-    "agent_id": {"type": "string"},
-    "started_at": {"type": ["string", "null"], "format": "date-time"},
-    "finished_at": {"type": "string", "format": "date-time"},
-    "status": {"enum": ["succeeded", "failed", "ambiguous"]},
-    "error": {"type": ["string", "null"]},
-    "steps": {"type": "array"}
+    "protocol": {
+      "const": "q-agent-v4-result"
+    },
+    "action_id": {
+      "type": "string"
+    },
+    "agent_id": {
+      "type": "string"
+    },
+    "started_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "finished_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "enum": [
+        "succeeded",
+        "failed",
+        "ambiguous",
+        "blocked",
+        "cancelled",
+        "needs_user"
+      ]
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "steps": {
+      "type": "array"
+    },
+    "action_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
   },
   "additionalProperties": true
 }

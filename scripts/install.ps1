@@ -23,7 +23,7 @@ New-Item -ItemType Directory -Force -Path 'C:\ProgramData\GPT-Controller\interac
 
 $versionText = (Invoke-Native -FilePath $Python -Arguments @('-c',"import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')") -Capture | Out-String).Trim()
 $parts = $versionText.Split('.')
-if ([int]$parts[0] -lt 3 -or ([int]$parts[0] -eq 3 -and [int]$parts[1] -lt 10)) { throw "GPT Controller requires Python 3.10 or newer. Found $versionText" }
+if ([int]$parts[0] -lt 3 -or ([int]$parts[0] -eq 3 -and [int]$parts[1] -lt 11)) { throw "GPT Controller requires Python 3.11 or newer. Found $versionText" }
 Write-Host "Using Python $versionText"
 
 $venvPython = "$InstallRoot\venv\Scripts\python.exe"

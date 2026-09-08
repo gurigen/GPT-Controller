@@ -39,6 +39,9 @@ class Runtime:
         with self._heartbeat_lock:
             payload = {
                 "protocol": "q-agent-v4-heartbeat",
+                "runtime_extension": __import__("agent_runtime.hardening", fromlist=["VERSION"]).VERSION,
+                "source_path": str(Path(__file__).resolve().parent),
+                "process_created_unix": __import__("psutil").Process().create_time(),
                 "agent_id": self.config.agent_id,
                 "pid": os.getpid(),
                 "branch": self.config.branch,
@@ -73,6 +76,7 @@ class Runtime:
             "worker_progress_at": progress.get("updated_at"),
             "worker_phase": progress.get("phase"),
             "worker_event": progress.get("event"),
+            "step_path": progress.get("step_path"),
         }
         if progress.get("phase") == "step" and progress.get("event") == "started":
             details.update({
@@ -109,6 +113,9 @@ class Runtime:
         log.info("GPT Controller supervisor starting: agent_id=%s branch=%s", self.config.agent_id, self.config.branch)
         self._set_heartbeat_state("starting")
         self._start_heartbeat()
+        from .hardening.control_poller import ControlPoller
+        control_poller = ControlPoller(self.config, lambda: self._heartbeat_action_id)
+        control_poller.start()
         try:
             while True:
                 try:
@@ -125,6 +132,7 @@ class Runtime:
                     log.exception("runtime supervisor loop error")
                     time.sleep(max(self.config.poll_seconds, 5))
         finally:
+            control_poller.close()
             self._stop_heartbeat()
 
     def _supervisor_failure_result(self, action: dict[str, Any], exc: Exception) -> dict[str, Any]:
@@ -134,8 +142,8 @@ class Runtime:
             "agent_id": self.config.agent_id,
             "started_at": None,
             "finished_at": utc_now(),
-            "status": "failed",
-            "error": f"Action supervisor failed before worker Result: {exc}",
+            "status": "ambiguous",
+            "error": f"Action supervisor failed; execution state may be ambiguous: {exc}",
             "steps": [],
             "workspace_guards": {},
             "supervisor": {
@@ -149,6 +157,8 @@ class Runtime:
         # Idle polling should be one cheap remote-head lookup, not a full fetch/status/
         # rev-list sequence every few seconds. A real sync runs only when the remote
         # branch changes (or during startup recovery).
+        if self.config is not None and (self.config.repo_path.parent / "state" / "maintenance.lock").exists():
+            return False
         remote_head = self.bus.remote_head()
         if self._remote_head != remote_head:
             self.bus.sync()

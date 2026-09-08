@@ -68,7 +68,7 @@ class WindowsScriptSafetyTests(unittest.TestCase):
 
     def test_one_click_updater_closes_on_success_and_pauses_only_on_failure(self) -> None:
         text = (ROOT / "Update GPT Controller.bat").read_text(encoding="utf-8")
-        success = 'if "%RC%"=="0" (\n  echo Update finished successfully.\n  exit /b 0\n)'
+        success = 'if "%RC%"=="0" (\n  echo Update finished successfully.\n  echo Candidate is staged only. Read HARDENING_README_JA.md before activation.\n  exit /b 0\n)'
         self.assertIn(success, text.replace("\r\n", "\n"))
         self.assertEqual(text.lower().count("pause"), 2)
         failure_marker = "echo Update failed with exit code %RC%."

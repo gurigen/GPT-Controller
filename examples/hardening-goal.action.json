@@ -1,0 +1,41 @@
+{
+  "protocol": "q-agent-v4",
+  "id": "goal-csv-unique-001",
+  "target": {
+    "mode": "agent",
+    "agent": "my-pc"
+  },
+  "workspace": "scratch",
+  "steps": [
+    {
+      "type": "file.write",
+      "path": "verification/report.csv",
+      "text": "name,score\nexample,100\n"
+    }
+  ],
+  "goal": {
+    "description": "CSVを保存し、列と内容を確認する",
+    "conditions": [
+      {
+        "type": "file.exists",
+        "workspace": "scratch",
+        "path": "verification/report.csv"
+      },
+      {
+        "type": "csv.columns",
+        "workspace": "scratch",
+        "path": "verification/report.csv",
+        "columns": [
+          "name",
+          "score"
+        ]
+      },
+      {
+        "type": "file.text_contains",
+        "workspace": "scratch",
+        "path": "verification/report.csv",
+        "text": "example,100"
+      }
+    ]
+  }
+}

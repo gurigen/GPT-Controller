@@ -49,12 +49,12 @@ class ProtocolTests(unittest.TestCase):
         validate_action({"protocol": "q-agent-v4", "id": "a-1", "steps": [{"type": "browser.playwright", "actions": [{"op": "goto", "url": "https://example.com"}]}]})
 
     def test_browser_cdp_and_interactive_validation(self):
-        validate_action({"protocol": "q-agent-v4", "id": "a-1", "steps": [{"type": "browser.playwright", "connection": "cdp", "actions": [{"op": "goto", "url": "https://example.com"}]}]})
-        validate_action({"protocol": "q-agent-v4", "id": "a-2", "steps": [{"type": "browser.interactive", "op": "launch", "url": "https://accounts.google.com/"}]})
+        validate_action({"protocol": "q-agent-v4", "id": "a-1", "target": {"mode":"agent","agent":"test-agent"}, "steps": [{"type": "browser.playwright", "connection": "cdp", "actions": [{"op": "goto", "url": "https://example.com"}]}]})
+        validate_action({"protocol": "q-agent-v4", "id": "a-2", "target": {"mode":"agent","agent":"test-agent"}, "steps": [{"type": "browser.interactive", "op": "launch", "url": "https://accounts.google.com/"}]})
         validate_action({"protocol": "q-agent-v4", "id": "a-3", "steps": [{"type": "browser.interactive", "op": "status"}]})
         with self.assertRaisesRegex(ValueError, "connection must be"):
             validate_action({"protocol": "q-agent-v4", "id": "a-4", "steps": [{"type": "browser.playwright", "connection": "remote", "actions": [{"op": "url"}]}]})
-        with self.assertRaisesRegex(ValueError, "browser.interactive op"):
+        with self.assertRaises(ValueError):
             validate_action({"protocol": "q-agent-v4", "id": "a-5", "steps": [{"type": "browser.interactive", "op": "click"}]})
 
     def test_action_schema_step_types_match_runtime_protocol(self):

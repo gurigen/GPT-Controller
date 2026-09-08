@@ -12,8 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_release_versions_and_public_product_metadata_are_consistent():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
-    assert project["version"] == "4.0.0"
-    assert __version__ == "4.0.0"
+    assert project["version"] == "4.1.0rc2"
+    assert __version__ == "4.1.0rc2"
     assert project["name"] == "gpt-controller-runtime"
     assert "gpt-controller" in project["scripts"]
     assert "gpt-controller-interactive" in project["scripts"]

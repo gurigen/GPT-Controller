@@ -108,7 +108,7 @@ class StabilitySupervisorTests(unittest.TestCase):
                 "steps": [{"type": "browser.playwright", "timeout_seconds": 1, "actions": [{"op": "url"}]}],
             }
             result = supervisor.execute(action)
-            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["status"], "ambiguous")
             self.assertTrue(result["supervisor"]["timed_out"])
             self.assertIn("exceeded", result["error"])
             self.assertEqual(result["steps"][0]["type"], "browser.playwright")

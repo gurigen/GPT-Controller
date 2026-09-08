@@ -68,12 +68,14 @@ def test_interactive_browser_launch_escapes_worker_job_via_interactive_host():
     assert '"launch_host": "interactive"' in block
 
 
-def test_interactive_host_cleans_processing_spool_after_durable_response():
+def test_interactive_host_uses_authenticated_processing_implementation():
+    import ast
     from pathlib import Path
-    source = (Path(__file__).resolve().parents[1] / "src/agent_runtime/interactive_host.py").read_text(encoding="utf-8")
-    start = source.index("def serve(config: Config)")
-    block = source[start:]
-    assert block.count("processing_path.unlink(missing_ok=True)") >= 2
+    source = (Path(__file__).resolve().parents[1] / 'src/agent_runtime/interactive_host.py').read_text(encoding='utf-8')
+    tree = ast.parse(source)
+    serve = next(node for node in tree.body if isinstance(node,ast.FunctionDef) and node.name == 'serve')
+    assert any(isinstance(node,ast.ImportFrom) and node.module == 'hardening.host' for node in ast.walk(serve))
+    # Stateful cleanup/late-ack behavior is covered by test_real_ipc.py.
 
 
 def test_protocol_accepts_recovery_operations():

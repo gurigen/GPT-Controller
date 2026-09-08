@@ -24,6 +24,11 @@ class Executor:
         self.interactive = InteractiveClient(config)
 
     def execute(self, action: dict[str, Any]) -> dict[str, Any]:
+        from .hardening.integration import execute
+        from .protocol import validate_action
+        return execute(self, action, self._execute_legacy, validator=validate_action)
+
+    def _execute_legacy(self, action: dict[str, Any]) -> dict[str, Any]:
         started = utc_now()
         results: list[dict[str, Any]] = []
         status = "succeeded"
@@ -270,6 +275,10 @@ class Executor:
         }
 
     def _step(self, action: dict[str, Any], step: dict[str, Any]) -> Any:
+        from .hardening.integration import step as guarded_step
+        return guarded_step(self, action, step, self._raw_step)
+
+    def _raw_step(self, action: dict[str, Any], step: dict[str, Any]) -> Any:
         kind = step["type"]
         workspace = step.get("workspace", action.get("workspace"))
         timeout = int(step.get("timeout_seconds", action.get("timeout_seconds", self.config.default_timeout_seconds)))
@@ -414,214 +423,8 @@ class Executor:
         raise ValueError(f"unsupported desktop.checkpoint op: {op}")
 
     def _desktop_loop(self, action: dict[str, Any], step: dict[str, Any], timeout: int) -> dict[str, Any]:
-        session = str(step["session"])
-        nested_steps = list(step["steps"])
-        max_cycles = max(1, min(int(step.get("max_cycles", 1)), 1000))
-        retry_attempts_default = max(1, min(int(step.get("retry_attempts", 3)), 20))
-        retry_delay_default = max(0.0, min(float(step.get("retry_delay_seconds", 0.5)), 30.0))
-        retry_backoff_default = max(1.0, min(float(step.get("retry_backoff", 1.7)), 10.0))
-        deadline = time.monotonic() + max(1, timeout)
-        resume = bool(step.get("resume", True))
-        checkpoint = load_checkpoint(self.config, session) if resume else None
-
-        if checkpoint and checkpoint.get("status") == "completed" and bool(step.get("reuse_completed", True)):
-            return {
-                "session": session,
-                "resumed": True,
-                "completed": True,
-                "reason": checkpoint.get("reason", "checkpoint_completed"),
-                "cycle": checkpoint.get("cycle"),
-                "last_outputs": checkpoint.get("last_outputs", []),
-                "checkpoint": checkpoint,
-            }
-
-        cycle = 0
-        next_step = 0
-        cycle_outputs: list[Any] = []
-        resumed = False
-        if checkpoint and checkpoint.get("status") in {"running", "retrying", "failed"}:
-            try:
-                cycle = max(0, int(checkpoint.get("cycle", 0)))
-                next_step = max(0, int(checkpoint.get("next_step", 0)))
-                saved_outputs = checkpoint.get("cycle_outputs", [])
-                cycle_outputs = list(saved_outputs) if isinstance(saved_outputs, list) else []
-                resumed = True
-            except Exception:
-                cycle = 0
-                next_step = 0
-                cycle_outputs = []
-
-        executed_steps = 0
-        write_checkpoint(self.config, session, {
-            "status": "running",
-            "action_id": action["id"],
-            "cycle": cycle,
-            "next_step": next_step,
-            "cycle_outputs": cycle_outputs,
-            "in_progress": None,
-        })
-
-        while cycle < max_cycles:
-            if next_step >= len(nested_steps):
-                matched = condition_matches(cycle_outputs, step.get("until")) if step.get("until") else False
-                if matched:
-                    final = write_checkpoint(self.config, session, {
-                        "status": "completed",
-                        "action_id": action["id"],
-                        "reason": "until_matched",
-                        "cycle": cycle,
-                        "next_step": len(nested_steps),
-                        "last_outputs": cycle_outputs,
-                        "in_progress": None,
-                    })
-                    return {
-                        "session": session,
-                        "resumed": resumed,
-                        "completed": True,
-                        "reason": "until_matched",
-                        "cycles_completed": cycle + 1,
-                        "executed_steps": executed_steps,
-                        "last_outputs": cycle_outputs,
-                        "checkpoint": final,
-                    }
-                cycle += 1
-                next_step = 0
-                if cycle >= max_cycles:
-                    break
-                cycle_outputs = []
-                write_checkpoint(self.config, session, {
-                    "status": "running",
-                    "action_id": action["id"],
-                    "cycle": cycle,
-                    "next_step": 0,
-                    "cycle_outputs": [],
-                    "in_progress": None,
-                })
-                continue
-
-            if time.monotonic() >= deadline:
-                raise TimeoutError(f"desktop.loop session {session} exceeded its {timeout}s timeout")
-
-            nested = dict(nested_steps[next_step])
-            run_if = nested.pop("run_if", None)
-            skip_if = nested.pop("skip_if", None)
-            if isinstance(run_if, dict) and not condition_matches(cycle_outputs, run_if):
-                item = {"index": next_step, "type": nested.get("type"), "status": "skipped", "reason": "run_if_false"}
-                cycle_outputs.append(item)
-                next_step += 1
-                write_checkpoint(self.config, session, {
-                    "status": "running", "action_id": action["id"], "cycle": cycle,
-                    "next_step": next_step, "cycle_outputs": cycle_outputs, "in_progress": None,
-                })
-                continue
-            if isinstance(skip_if, dict) and condition_matches(cycle_outputs, skip_if):
-                item = {"index": next_step, "type": nested.get("type"), "status": "skipped", "reason": "skip_if_true"}
-                cycle_outputs.append(item)
-                next_step += 1
-                write_checkpoint(self.config, session, {
-                    "status": "running", "action_id": action["id"], "cycle": cycle,
-                    "next_step": next_step, "cycle_outputs": cycle_outputs, "in_progress": None,
-                })
-                continue
-
-            attempts = max(1, min(int(nested.pop("retry_attempts", retry_attempts_default)), 20))
-            delay = max(0.0, min(float(nested.pop("retry_delay_seconds", retry_delay_default)), 30.0))
-            backoff = max(1.0, min(float(nested.pop("retry_backoff", retry_backoff_default)), 10.0))
-            continue_on_error = bool(nested.get("continue_on_error", False))
-            last_error: Exception | None = None
-            result: Any = None
-
-            for attempt in range(1, attempts + 1):
-                write_checkpoint(self.config, session, {
-                    "status": "retrying" if attempt > 1 else "running",
-                    "action_id": action["id"],
-                    "cycle": cycle,
-                    "next_step": next_step,
-                    "cycle_outputs": cycle_outputs,
-                    "in_progress": {"step": next_step, "type": nested.get("type"), "attempt": attempt},
-                })
-                try:
-                    result = self._step(action, nested)
-                    if isinstance(result, dict) and result.get("exit_code", 0) != 0:
-                        raise RuntimeError(
-                            f"nested step returned exit_code={result.get('exit_code')}: "
-                            f"{result.get('stderr') or result.get('stdout') or ''}"
-                        )
-                    last_error = None
-                    break
-                except Exception as exc:
-                    last_error = exc
-                    if attempt < attempts:
-                        remaining = deadline - time.monotonic()
-                        if remaining <= 0:
-                            break
-                        time.sleep(min(delay * (backoff ** (attempt - 1)), remaining, 30.0))
-
-            executed_steps += 1
-            if last_error is not None:
-                item = {
-                    "index": next_step,
-                    "type": nested.get("type"),
-                    "status": "failed",
-                    "error": str(last_error),
-                    "attempts": attempts,
-                }
-                cycle_outputs.append(item)
-                next_step += 1
-                write_checkpoint(self.config, session, {
-                    "status": "running" if continue_on_error else "failed",
-                    "action_id": action["id"],
-                    "cycle": cycle,
-                    "next_step": next_step if continue_on_error else next_step - 1,
-                    "cycle_outputs": cycle_outputs,
-                    "in_progress": None,
-                    "last_error": str(last_error),
-                })
-                if continue_on_error:
-                    continue
-                raise RuntimeError(
-                    f"desktop.loop session {session} step {next_step - 1} failed after {attempts} attempts: {last_error}"
-                ) from last_error
-
-            cycle_outputs.append({
-                "index": next_step,
-                "type": nested.get("type"),
-                "status": "succeeded",
-                "result": result,
-                "attempts": attempt,
-            })
-            next_step += 1
-            write_checkpoint(self.config, session, {
-                "status": "running",
-                "action_id": action["id"],
-                "cycle": cycle,
-                "next_step": next_step,
-                "cycle_outputs": cycle_outputs,
-                "in_progress": None,
-            })
-
-        reason = "max_cycles"
-        final = write_checkpoint(self.config, session, {
-            "status": "completed",
-            "action_id": action["id"],
-            "reason": reason,
-            "cycle": max(0, cycle - 1 if cycle >= max_cycles else cycle),
-            "next_step": len(nested_steps),
-            "last_outputs": cycle_outputs,
-            "in_progress": None,
-        })
-        if step.get("until") and bool(step.get("require_until", False)):
-            raise RuntimeError(f"desktop.loop session {session} reached max_cycles={max_cycles} without matching until")
-        return {
-            "session": session,
-            "resumed": resumed,
-            "completed": True,
-            "reason": reason,
-            "cycles_completed": max_cycles,
-            "executed_steps": executed_steps,
-            "last_outputs": cycle_outputs,
-            "checkpoint": final,
-        }
+        from .hardening.workflow import desktop_loop
+        return desktop_loop(self, action, step, timeout)
 
     def _git_sync(self, workspace: str | None, step: dict[str, Any], timeout: int) -> dict[str, Any]:
         cwd = workspace_for(self.config, workspace)
@@ -635,8 +438,10 @@ class Executor:
         if fetch["exit_code"] != 0:
             return fetch
         branch = run_process([self.config.git, "branch", "--show-current"], cwd, timeout, max_output_bytes=self.config.max_output_bytes)
-        if branch["exit_code"] != 0 or not branch["stdout"].strip():
+        if branch["exit_code"] != 0:
             return branch
+        if not branch["stdout"].strip():
+            raise RuntimeError("workspace.git_sync refused detached HEAD")
         branch_name = branch["stdout"].strip()
         pull = run_process([self.config.git, "pull", "--ff-only", remote, branch_name], cwd, timeout, max_output_bytes=self.config.max_output_bytes)
         return {"exit_code": pull["exit_code"], "remote": remote, "branch": branch_name, "stdout": pull["stdout"], "stderr": pull["stderr"]}
@@ -693,6 +498,8 @@ class Executor:
         raise RuntimeError("no supported interactive browser found (Chrome or Edge)")
 
     def _browser_interactive(self, step: dict[str, Any]) -> dict[str, Any]:
+        if step.get("op") == "status":
+            return self._cdp_status()
         if "browser" not in self.config.capabilities:
             raise RuntimeError("this agent does not advertise browser capability")
         if not self.config.allow_visible_gui_launch:
@@ -811,12 +618,15 @@ class Executor:
     def _select_cdp_page(self, context: Any, step: dict[str, Any]) -> tuple[Any, bool]:
         pages = [page for page in context.pages if not page.is_closed()]
         match = step.get("page_match")
-        if isinstance(match, dict):
+        if match is not None:
             matching = [page for page in pages if self._browser_page_matches(page, match)]
-            if matching:
-                return matching[-1], False
-        if bool(step.get("reuse_page", False)) and pages:
-            return pages[-1], False
+            if len(matching) != 1:
+                raise RuntimeError("CDP page match must resolve to exactly one tab")
+            return matching[0], False
+        if step.get("reuse_page"):
+            if len(pages) != 1:
+                raise RuntimeError("reuse_page requires one tab or an explicit page_match")
+            return pages[0], False
         return context.new_page(), True
 
     def _connect_cdp_browser(self, playwright: Any, step: dict[str, Any]) -> Any:
@@ -854,7 +664,8 @@ class Executor:
         if "browser" not in self.config.capabilities:
             raise RuntimeError("this agent does not advertise browser capability")
 
-        outputs: list[Any] = []
+        from .hardening.output import BoundedOutputs
+        outputs: list[Any] = BoundedOutputs(self.config.max_output_bytes)
 
         def browser_path(value: str) -> Path:
             return resolve_path(self.config, workspace, value)
@@ -862,6 +673,7 @@ class Executor:
         with sync_playwright() as p:
             external_browser = False
             owned_page = False
+            owned_pages: list[Any] = []
             if connection == "cdp":
                 if bool(step.get("auto_recover", True)) and not self._cdp_status().get("reachable"):
                     self._browser_interactive({
@@ -873,9 +685,13 @@ class Executor:
                     raise RuntimeError("CDP browser has no browser context")
                 context = browser.contexts[0]
                 page, owned_page = self._select_cdp_page(context, step)
+                if owned_page:
+                    owned_pages.append(page)
                 external_browser = True
             else:
                 kwargs: dict[str, Any] = {"headless": headless}
+                if self.config.browser_managed_executable:
+                    kwargs["executable_path"] = self.config.browser_managed_executable
                 if self.config.browser_channel:
                     kwargs["channel"] = self.config.browser_channel
                 if self.config.browser_user_data_dir:
@@ -894,6 +710,9 @@ class Executor:
                     return scope.locator(action["selector"])
 
                 for action in step.get("actions", []):
+                    from .hardening.control import Control
+                    from .hardening.validation import READ_BROWSER
+                    Control(self.config).check(getattr(self, "_hardening_action", None), input_operation=action.get("op") not in READ_BROWSER)
                     op = action["op"]
                     timeout_ms = action.get("timeout_ms", 30000)
                     if op == "goto":
@@ -947,6 +766,8 @@ class Executor:
                         page.wait_for_function(action["expression"], arg=action.get("arg"), timeout=timeout_ms)
                         outputs.append({"op": op})
                     elif op == "bring_to_front":
+                        if not self.config.allow_foreground_activation:
+                            raise RuntimeError("foreground activation disabled by local policy")
                         page.bring_to_front()
                         outputs.append({"op": op})
                     elif op == "sleep":
@@ -997,10 +818,14 @@ class Executor:
                         with page.expect_popup(timeout=timeout_ms) as popup_info:
                             locator(action).click(timeout=timeout_ms)
                         page = popup_info.value
+                        if external_browser:
+                            owned_pages.append(page)
                         page.wait_for_load_state(action.get("wait_until", "load"), timeout=timeout_ms)
                         outputs.append({"op": op, "url": page.url})
                     elif op == "new_page":
                         page = context.new_page()
+                        if external_browser:
+                            owned_pages.append(page)
                         outputs.append({"op": op, "page_index": len(context.pages) - 1})
                     elif op == "pages":
                         outputs.append({
@@ -1026,12 +851,16 @@ class Executor:
                         page = pages[index]
                         outputs.append({"op": op, "page_index": index, "url": page.url})
                     elif op == "close_page":
+                        if external_browser and page not in owned_pages and not action.get("allow_borrowed_close", False):
+                            raise RuntimeError("closing a borrowed tab requires explicit allow_borrowed_close")
                         page.close()
                         pages = context.pages
                         page = pages[-1] if pages else context.new_page()
+                        if not pages and external_browser:
+                            owned_pages.append(page)
                         outputs.append({"op": op})
                     elif op == "cookies_get":
-                        outputs.append({"op": op, "cookies": context.cookies(action.get("urls"))})
+                        outputs.append({"op": op, "cookie_metadata": [{k: v for k, v in cookie.items() if k != "value"} for cookie in context.cookies(action.get("urls"))], "values_omitted": True})
                     elif op == "cookies_add":
                         context.add_cookies(action["cookies"])
                         outputs.append({"op": op})
@@ -1046,7 +875,10 @@ class Executor:
                             context.storage_state(path=str(path))
                             outputs.append({"op": op, "path": str(path), "state": None})
                         else:
-                            outputs.append({"op": op, "path": None, "state": context.storage_state()})
+                            from .hardening.artifacts import ArtifactStore
+                            state_bytes = json.dumps(context.storage_state(), ensure_ascii=False).encode("utf-8")
+                            secret = ArtifactStore(self.config).add_bytes(state_bytes, name="browser-state.json", mime="application/json", metadata={"sensitive": True})
+                            outputs.append({"op": op, "secret_ref": secret["artifact_id"], "state": None})
                     elif op == "pdf":
                         path = browser_path(action["path"])
                         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1081,8 +913,9 @@ class Executor:
                 }
             finally:
                 if external_browser:
-                    if owned_page and not page.is_closed():
-                        page.close()
+                    for owned in owned_pages:
+                        if not owned.is_closed():
+                            owned.close()
                 else:
                     context.close()
                     if browser:

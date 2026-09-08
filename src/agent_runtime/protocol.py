@@ -6,6 +6,8 @@ from typing import Any
 
 from .util import parse_utc
 
+from .hardening.validation import NEW_TYPES, validate_action_extra
+
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 SUPPORTED = {
     "noop",
@@ -29,6 +31,8 @@ SUPPORTED = {
     "desktop.loop",
     "deploy.exec",
 }
+
+SUPPORTED |= NEW_TYPES
 
 INTRUSIVE_WINDOWS_UI_OPS = {
     "click", "click_input", "type_keys", "focus", "set_focus", "maximize", "minimize", "restore",
@@ -113,6 +117,8 @@ def _validate_browser_action(action: dict[str, Any], where: str) -> None:
 def _validate_step(action: dict[str, Any], step: dict[str, Any], index: int) -> None:
     where = f"step {index}"
     kind = step.get("type")
+    if kind in NEW_TYPES:
+        return  # The whole envelope is validated by validate_action_extra first.
     if kind not in SUPPORTED:
         raise ValueError(f"{where}: unsupported type {kind!r}")
 
@@ -199,7 +205,8 @@ def _validate_step(action: dict[str, Any], step: dict[str, Any], index: int) -> 
                 raise ValueError(f"{where}.steps[{nested_index}]: object required")
             if nested.get("type") == "desktop.loop":
                 raise ValueError(f"{where}.steps[{nested_index}]: nested desktop.loop is not supported")
-            _validate_step(action, nested, index)
+            from .hardening.common import step_context
+            _validate_step(action, step_context(action, step, nested), index)
         _require_exact_agent_target(action, where)
         return
 
@@ -316,6 +323,7 @@ def _validate_workspace_guard(action: dict[str, Any]) -> None:
 
 
 def validate_action(action: dict[str, Any]) -> None:
+    validate_action_extra(action)
     if action.get("protocol") != "q-agent-v4":
         raise ValueError("protocol must be q-agent-v4")
     action_id = action.get("id")

@@ -1,0 +1,17 @@
+{
+  "security": {
+    "mode": "restricted",
+    "rules": {
+      "shell.exec": "deny",
+      "filesystem.delete": "ask",
+      "artifact.export": "ask",
+      "ui.input": "ask"
+    },
+    "max_action_age_seconds": 600,
+    "max_result_bytes": 2000000,
+    "artifact_max_bytes": 10000000,
+    "artifact_total_bytes": 100000000,
+    "artifact_ttl_seconds": 3600,
+    "agent_publish_seconds": 300
+  }
+}

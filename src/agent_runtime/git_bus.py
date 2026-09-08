@@ -133,6 +133,12 @@ class GitBus:
         return recovered
 
     def _eligible(self, action: dict[str, Any]) -> bool:
+        from .hardening.dependencies import state as dependency_state
+        missing, failed = dependency_state(self.c, action)
+        if missing and not failed:
+            return False
+        if action.get("not_before") and parse_utc(action["not_before"]) > datetime.now(timezone.utc):
+            return False
         requires = set(str(x) for x in action.get("requires", []))
         if not requires.issubset(self.c.capabilities):
             return False
@@ -165,6 +171,8 @@ class GitBus:
         validate_action(action)
         if not self._eligible(action):
             return None
+        from .hardening.bus import assert_new_claim
+        action_sha256 = assert_new_claim(self, pending_path, action)
         action_id = action["id"]
         if (self.repo / "results" / f"{action_id}.json").exists():
             return None
@@ -174,6 +182,7 @@ class GitBus:
         claim_meta = self.repo / "claims" / f"{action_id}.json"
         atomic_write_json(claim_meta, {
             "protocol": "q-agent-v4-claim",
+            "action_sha256": action_sha256,
             "action_id": action_id,
             "agent_id": self.c.agent_id,
             "hostname": socket.gethostname(),
@@ -189,23 +198,5 @@ class GitBus:
         return action, running
 
     def finish(self, action: dict[str, Any], running_path: Path, result: dict[str, Any]) -> None:
-        action_id = action["id"]
-        result_path = self.repo / "results" / f"{action_id}.json"
-        atomic_write_json(result_path, result)
-        done_path = self.repo / "queue" / "done" / f"{action_id}.json"
-        done_path.parent.mkdir(parents=True, exist_ok=True)
-        if running_path.exists():
-            running_path.replace(done_path)
-        self._git("add", "queue", "results", "claims")
-        self._git("commit", "-m", f"gpt-controller result {action_id} {result['status']}")
-        # Result publication retries are safe: execution is already represented by the durable local claim.
-        for attempt in range(10):
-            pushed = self._git("push", self.c.remote, self.c.branch, check=False)
-            if pushed["exit_code"] == 0:
-                return
-            time.sleep(min(2 ** attempt, 30))
-            # Do NOT reset/re-execute here. Preserve local result commit and rebase it on remote.
-            rebased = self._git("pull", "--rebase", self.c.remote, self.c.branch, check=False)
-            if rebased["exit_code"] != 0:
-                raise RuntimeError(f"cannot publish result without risking replay: {rebased['stderr'] or rebased['stdout']}")
-        raise RuntimeError("result push failed after retries")
+        from .hardening.bus import finish
+        finish(self, action, running_path, result)

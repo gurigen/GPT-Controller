@@ -31,6 +31,7 @@ class SupervisedExecutor(Executor):
             "phase": "step",
             "event": "started",
             "step_index": index,
+            "step_path": getattr(self, "_hardening_nested_path", None) or str(index),
             "step_type": step.get("type"),
             "timeout_seconds": timeout,
         })
@@ -41,6 +42,7 @@ class SupervisedExecutor(Executor):
                 "phase": "step",
                 "event": "finished",
                 "step_index": index,
+            "step_path": getattr(self, "_hardening_nested_path", None) or str(index),
                 "step_type": step.get("type"),
                 "timeout_seconds": timeout,
             })

@@ -1,28 +1,20 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-echo GPT Controller installer
-echo.
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\bootstrap-windows.ps1"
-set "RC=%ERRORLEVEL%"
-echo.
-if "%RC%"=="0" (
-  echo Installation finished successfully.
-  echo See C:\GPT-Controller\CHATGPT_SETUP.txt for the final ChatGPT connection step.
+where pwsh.exe >nul 2>&1
+if errorlevel 1 (
+  echo PowerShell 7 is required to stage this reviewed candidate.
   pause
+  exit /b 1
+)
+echo Staging only. Existing PC tasks and permissions will not be changed.
+pwsh.exe -NoLogo -NoProfile -File "%~dp0scripts\install-candidate.ps1" -CandidateSource "%~dp0."
+set "RC=%ERRORLEVEL%"
+if "%RC%"=="0" (
+  echo Update finished successfully.
+  echo Candidate is staged only. Read HARDENING_README_JA.md before activation.
   exit /b 0
 )
-echo Installation failed with exit code %RC%.
-echo.
-if exist "C:\GPT-Controller\logs\install.log" (
-  echo ---- Last installer log lines ----
-  powershell.exe -NoLogo -NoProfile -Command "Get-Content -LiteralPath 'C:\GPT-Controller\logs\install.log' -Tail 60"
-  echo ----------------------------------
-  echo Full log: C:\GPT-Controller\logs\install.log
-) else (
-  echo No install log was created. The failure happened before the elevated installer started.
-)
-echo.
-echo Please send the error text above when reporting an install problem.
+echo Update failed with exit code %RC%.
 pause
 exit /b %RC%

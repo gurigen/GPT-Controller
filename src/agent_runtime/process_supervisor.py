@@ -158,7 +158,7 @@ class ActionSupervisor:
             steps.append({
                 "index": step_index,
                 "type": step_type,
-                "status": "failed",
+                "status": "ambiguous",
                 "error": reason,
                 "timed_out": True,
             })
@@ -168,7 +168,7 @@ class ActionSupervisor:
             "agent_id": agent_id,
             "started_at": started_at,
             "finished_at": utc_now(),
-            "status": "failed",
+            "status": "ambiguous",
             "error": reason,
             "steps": steps,
             "workspace_guards": {},
@@ -180,27 +180,9 @@ class ActionSupervisor:
         }
 
     def execute(self, action: dict[str, Any], on_progress=None) -> dict[str, Any]:
-        resumable = bool(action.get("resume_from_checkpoint", False))
-        max_attempts = max(1, min(int(action.get("resume_attempts", 3 if resumable else 1)), 10))
-        last: dict[str, Any] | None = None
-        for attempt in range(1, max_attempts + 1):
-            last = self._execute_once(action, on_progress=on_progress)
-            supervisor = last.get("supervisor") if isinstance(last, dict) else None
-            supervisor = supervisor if isinstance(supervisor, dict) else {}
-            if last.get("status") == "succeeded":
-                if resumable:
-                    supervisor["resume_attempt"] = attempt
-                    supervisor["resume_attempts_allowed"] = max_attempts
-                    last["supervisor"] = supervisor
-                return last
-            infrastructure_failure = bool(supervisor.get("timed_out")) or (
-                not last.get("steps") and "worker_exit_code" in supervisor
-            )
-            if not resumable or not infrastructure_failure or attempt >= max_attempts:
-                return last
-            time.sleep(min(2 ** (attempt - 1), 8))
-        assert last is not None
-        return last
+        # A process timeout is not proof that no side effect occurred.
+        # resume_attempts is retained as input metadata, not replay authority.
+        return self._execute_once(action, on_progress=on_progress)
 
     def _execute_once(self, action: dict[str, Any], on_progress=None) -> dict[str, Any]:
         action_id = str(action["id"])
@@ -221,12 +203,16 @@ class ActionSupervisor:
             argv,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             creationflags=creationflags,
             start_new_session=(os.name != "nt"),
         )
         job = None
         last_progress: dict[str, Any] = {}
+        from .hardening.processes import snapshot_descendants, terminate_snapshot, CaptureLog
+        descendants: dict[int, float] = {}
+        worker_log = CaptureLog(process.stderr)
+        result = None
         timeout_reason: str | None = None
 
         try:
@@ -236,6 +222,15 @@ class ActionSupervisor:
             gate_path.touch()
 
             while process.poll() is None:
+                if os.name != "nt":
+                    descendants.update(snapshot_descendants(process))
+                from .hardening.control import Control
+                from .hardening.common import ControlError
+                try:
+                    Control(self.config).check(action)
+                except ControlError as exc:
+                    timeout_reason = str(exc)
+                    break
                 now_monotonic = time.monotonic()
                 if progress_path.exists():
                     try:
@@ -272,7 +267,8 @@ class ActionSupervisor:
 
             if timeout_reason is not None:
                 terminate_process_tree(process, wait_seconds=15)
-                return self._timeout_result(action, self.config.agent_id, started_at, last_progress, timeout_reason)
+                result = self._timeout_result(action, self.config.agent_id, started_at, last_progress, timeout_reason)
+                return result
 
             exit_code = process.wait(timeout=10)
             if result_path.exists():
@@ -287,13 +283,13 @@ class ActionSupervisor:
                         "worker_exit_code": exit_code,
                     })
                     return result
-            return {
+            result = {
                 "protocol": "q-agent-v4-result",
                 "action_id": action_id,
                 "agent_id": self.config.agent_id,
                 "started_at": started_at,
                 "finished_at": utc_now(),
-                "status": "failed",
+                "status": "ambiguous",
                 "error": f"Action worker exited with code {exit_code} without a durable worker result",
                 "steps": [],
                 "workspace_guards": {},
@@ -303,7 +299,13 @@ class ActionSupervisor:
                     "last_progress": last_progress,
                 },
             }
+            return result
         finally:
+            if os.name != "nt":
+                terminate_snapshot(list(descendants.items()))
+            from .hardening.output import safe_output
+            if result is not None and result.get("status") != "succeeded":
+                result.setdefault("supervisor", {})["worker_stderr_tail"] = safe_output(worker_log.text(), 65536)
             # Closing the Job Object kills any descendants intentionally left running by
             # an earlier step (for example Start-Process npx astro preview). If Job setup
             # itself failed, fall back to explicit tree termination so no worker escapes
