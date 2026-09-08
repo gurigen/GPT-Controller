@@ -1,3 +1,9 @@
+# Release candidate 4.1.0rc2 — read this first
+
+This is a locally built, NOT upstream-published hardening candidate. The q-agent-v4 wire name is retained, but retry, approval, GUI input, and installation behavior has changed. See [HARDENING_README_JA.md](HARDENING_README_JA.md) and [docs/HARDENING_CONTRACT.md](docs/HARDENING_CONTRACT.md) for the authoritative candidate contract. Windows acceptance and deployment are NOT completed. The original upstream notes below are retained for context, not as proof of candidate capabilities.
+
+---
+
 # Security
 
 GPT Controller is intentionally powerful software. Treat enrollment as granting a remote execution channel to the Windows machine.

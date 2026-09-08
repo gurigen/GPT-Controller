@@ -7,6 +7,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
+# This candidate must never update an active environment in place.
+if (Test-Path (Join-Path $RepoRoot 'SOURCE_MANIFEST.json')) {
+    & (Join-Path $PSScriptRoot 'install-candidate.ps1') -CandidateSource $RepoRoot -InstallRoot $InstallRoot -RuntimeTask $RuntimeTask -InteractiveTask $InteractiveTask
+    return
+}
+throw 'Unreviewed in-place update refused; use install-candidate.ps1 with a verified source manifest.'
 $LogDir = Join-Path $InstallRoot 'logs'
 $UpdateLog = Join-Path $LogDir 'update.log'
 $MaintenancePath = Join-Path $InstallRoot 'state\maintenance.lock'
@@ -66,7 +72,7 @@ function Get-AgentRuntimeHeartbeatPath {
     $configPath = Join-Path $InstallRoot 'agent.config.json'
     if (-not (Test-Path -LiteralPath $configPath)) { return $null }
     try {
-        $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json -DateKind String
+        $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
         $controlRepo = [Environment]::ExpandEnvironmentVariables([string]$config.control_repo)
         if ([string]::IsNullOrWhiteSpace($controlRepo)) { return $null }
         $controlParent = Split-Path -Parent $controlRepo
@@ -84,7 +90,7 @@ function Stop-AgentRuntimeTree {
     $runtimePid = 0
     if ($heartbeatPath -and (Test-Path -LiteralPath $heartbeatPath)) {
         try {
-            $heartbeat = Get-Content -LiteralPath $heartbeatPath -Raw -Encoding UTF8 | ConvertFrom-Json -DateKind String
+            $heartbeat = Get-Content -LiteralPath $heartbeatPath -Raw -Encoding UTF8 | ConvertFrom-Json
             [void][int]::TryParse([string]$heartbeat.pid, [ref]$runtimePid)
         }
         catch {
@@ -140,13 +146,13 @@ function Wait-AgentRuntimeHealthy {
         if (-not $task) { throw "Runtime task disappeared after update: $TaskName" }
         if ($task.State -eq 'Running' -and (Test-Path -LiteralPath $heartbeatPath)) {
             try {
-                $heartbeat = Get-Content -LiteralPath $heartbeatPath -Raw -Encoding UTF8 | ConvertFrom-Json -DateKind String
-                $updated = [DateTimeOffset]::Parse([string]$heartbeat.updated_at).ToUniversalTime()
+                $heartbeat = Get-Content -LiteralPath $heartbeatPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                $updated = if ($heartbeat.updated_at -is [DateTime]) { ([DateTimeOffset]$heartbeat.updated_at).ToUniversalTime() } else { [DateTimeOffset]::Parse([string]$heartbeat.updated_at).ToUniversalTime() }
                 $pidValue = 0
                 $pidOk = [int]::TryParse([string]$heartbeat.pid, [ref]$pidValue)
                 if ($updated -ge $started.AddSeconds(-2) -and $pidOk -and $pidValue -gt 0) {
                     $process = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
-                    if ($process) {
+                    if ($process -and ([string]$heartbeat.state -notin @('loop_error','starting'))) {
                         Write-Host "Runtime health handshake PASS: pid=$pidValue state=$($heartbeat.state) heartbeat=$($heartbeat.updated_at)"
                         return
                     }

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -37,10 +37,20 @@ class Config:
     interactive_spool: Path
     interactive_timeout_seconds: int
     deploy_profiles: dict[str, dict[str, Any]]
+    security: dict[str, Any] = field(default_factory=dict)
+    browser_managed_executable: str | None = None
 
     @staticmethod
     def load(path: Path) -> "Config":
         raw = load_json(path)
+        from .hardening.validation import finite_tree
+        from .hardening.common import identifier, bounded_number
+        from .hardening.policy import validate_security
+        finite_tree(raw)
+        identifier(raw.get("agent_id"), "agent_id")
+        validate_security(raw.get("security", {}))
+        for name, default, minimum, maximum in (("poll_seconds", 3, 1, 3600), ("default_timeout_seconds", 300, 1, 86400), ("max_output_bytes", 2000000, 1024, 10000000)):
+            bounded_number(raw.get(name, default), name, minimum, maximum, True)
         browser = raw.get("browser", {})
         interaction = raw.get("interaction_policy", {})
         interactive = raw.get("interactive_host", {})
@@ -133,4 +143,6 @@ class Config:
             interactive_spool=Path(interactive.get("spool", "C:/ProgramData/GPT-Controller/interactive")).expanduser().resolve(),
             interactive_timeout_seconds=int(interactive.get("timeout_seconds", 120)),
             deploy_profiles=dict(raw.get("deploy_profiles", {})),
+            security=dict(raw.get("security", {})),
+            browser_managed_executable=browser.get("managed_executable"),
         )

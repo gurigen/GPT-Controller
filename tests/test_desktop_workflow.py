@@ -105,18 +105,32 @@ def test_protocol_accepts_file_dialog_ops():
     })
 
 
-def test_resilient_bus_source_requeues_explicit_resumable_loops():
-    source = (Path(__file__).resolve().parents[1] / "src/agent_runtime/resilient_bus.py").read_text(encoding="utf-8")
-    assert 'action.get("resume_from_checkpoint") is True' in source
-    assert 'step.get("type") == "desktop.loop"' in source
-    assert 'queue" / "pending"' in source
+def test_resilient_bus_never_requeues_claim_after_unknown_side_effect(tmp_path):
+    import json
+    from agent_runtime.resilient_bus import ResilientGitBus
+    bus = ResilientGitBus.__new__(ResilientGitBus)
+    bus.repo = tmp_path
+    bus.c = SimpleNamespace(agent_id='test-agent')
+    bus._publish_recovery_commit = lambda message: None
+    running = tmp_path/'queue/running/action.test-agent.json'
+    running.parent.mkdir(parents=True)
+    running.write_text(json.dumps({'id':'action','resume_from_checkpoint':True,'steps':[{'type':'desktop.loop'}]}))
+    assert bus.recover_ambiguous() == 1
+    assert not (tmp_path/'queue/pending/action.json').exists()
+    assert json.loads((tmp_path/'results/action.json').read_text())['status'] == 'ambiguous'
 
 
-def test_supervisor_source_retries_resumable_infrastructure_failures():
-    source = (Path(__file__).resolve().parents[1] / "src/agent_runtime/process_supervisor.py").read_text(encoding="utf-8")
-    assert 'resume_attempts' in source
-    assert 'infrastructure_failure' in source
-    assert 'self._execute_once(action' in source
+def test_supervisor_does_not_retry_ambiguous_infrastructure_failure():
+    from agent_runtime.process_supervisor import ActionSupervisor
+    supervisor = ActionSupervisor.__new__(ActionSupervisor)
+    calls = []
+    def attempt(action, on_progress=None):
+        calls.append(action)
+        return {'status':'ambiguous','steps':[],'supervisor':{'timed_out':True}}
+    supervisor._execute_once = attempt
+    result = supervisor.execute({'resume_from_checkpoint':True,'resume_attempts':10})
+    assert result['status'] == 'ambiguous'
+    assert len(calls) == 1
 
 
 def test_interactive_host_contains_dialog_and_explorer_primitives():
@@ -161,12 +175,19 @@ def test_interactive_revalidates_input_desktop_per_intrusive_action():
     assert 'input_desktop = _ensure_default_input_desktop(config, op)' in source
 
 
-def test_explorer_selection_prefers_uia_select_before_mouse_click():
-    source = (Path(__file__).resolve().parents[1] / "src/agent_runtime/interactive_host.py").read_text(encoding="utf-8")
-    select_pos = source.index('item.select()')
-    click_pos = source.index('item.click_input()', select_pos)
-    assert select_pos < click_pos
-    assert 'if not selected:' in source[select_pos:click_pos + 100]
+def test_explorer_item_requires_unique_full_name():
+    import pytest
+    from agent_runtime.hardening.selectors import explorer_item
+    from agent_runtime.hardening.common import ControlError
+    def item(name):
+        return SimpleNamespace(element_info=SimpleNamespace(control_type='ListItem'), window_text=lambda:name,
+                               is_visible=lambda:True,is_enabled=lambda:True)
+    exact, other = item('report.csv'), item('report.csv.backup')
+    assert explorer_item(SimpleNamespace(descendants=lambda:[other,exact]),'report.csv') is exact
+    with pytest.raises(ControlError):
+        explorer_item(SimpleNamespace(descendants=lambda:[other]),'report.csv')
+    with pytest.raises(ControlError):
+        explorer_item(SimpleNamespace(descendants=lambda:[exact,item('report.csv')]),'report.csv')
 
 
 def test_focus_window_verifies_foreground_instead_of_silently_ignoring_failure():
@@ -192,14 +213,14 @@ def test_focus_window_has_physical_fallback_only_for_dedicated_input_policy():
     assert "mouse.click" in source
 
 
-def test_unicode_clipboard_paste_waits_before_restore():
-    source = (Path(__file__).resolve().parents[1] / "src/agent_runtime/interactive_host.py").read_text(encoding="utf-8")
-    start = source.index('def _paste_unicode')
-    end = source.index('def _wrapper', start)
-    chunk = source[start:end]
-    assert 'keyboard.send_keys("^v"' in chunk
-    assert 'time.sleep(0.45)' in chunk
-    assert chunk.index('time.sleep(0.45)') < chunk.index('_clipboard_set_text(previous)')
+def test_unicode_entry_does_not_touch_clipboard(monkeypatch):
+    from agent_runtime import interactive_host
+    from agent_runtime.hardening import desktop
+    calls = []
+    monkeypatch.setattr(desktop,'send_unicode',lambda text,check: calls.append(text))
+    monkeypatch.setattr(interactive_host,'_clipboard_set_text',lambda text: (_ for _ in ()).throw(AssertionError('clipboard touched')))
+    interactive_host._paste_unicode(None,'日本語😀')
+    assert calls == ['日本語😀']
 
 
 def test_interactive_host_run_level_is_machine_configurable_and_defaults_limited():
@@ -210,13 +231,12 @@ def test_interactive_host_run_level_is_machine_configurable_and_defaults_limited
     assert "-RunLevel $runLevel" in source
 
 
-def test_auto_dialog_discovery_is_available_without_fixed_title():
-    source = (Path(__file__).resolve().parents[1] / "src/agent_runtime/interactive_host.py").read_text(encoding="utf-8")
-    assert "def _discover_dialog(" in source
-    assert 'if op == "discover_dialog":' in source
-    assert 'kind = str(action.get("kind", "file"))' in source
-    assert 'FileNameControlHost' in source
-    assert 'active_handle' in source
+def test_dialog_discovery_requires_process_identity():
+    import pytest
+    from agent_runtime.hardening.selectors import discover_dialog
+    from agent_runtime.hardening.common import ControlError
+    with pytest.raises(ControlError,match='process_id'):
+        discover_dialog(None,None,{'kind':'file'})
 
 
 def test_auto_dialog_discovery_retargets_following_file_dialog_ops():
@@ -227,44 +247,53 @@ def test_auto_dialog_discovery_retargets_following_file_dialog_ops():
     assert discover < retarget < filename
 
 
-def test_native_common_dialog_does_not_require_descendant_readiness():
-    source = (Path(__file__).resolve().parents[1] / "src/agent_runtime/interactive_host.py").read_text(encoding="utf-8")
-    block = source[source.index('def _looks_like_file_dialog'):source.index('def _win32_dialog_handles')]
-    class_pos = block.index('if class_name == "#32770":')
-    return_pos = block.index('return True', class_pos)
-    filename_pos = block.index('FileNameControlHost', return_pos)
-    assert class_pos < return_pos < filename_pos
+def test_native_class_alone_is_not_a_file_dialog():
+    from agent_runtime.hardening.selectors import looks_like_file_dialog
+    window = SimpleNamespace(is_visible=lambda:True,is_enabled=lambda:True,class_name=lambda:'#32770',descendants=lambda:[])
+    assert not looks_like_file_dialog(window)
 
 
-def test_dialog_discovery_timeout_reports_visible_windows():
-    source = (Path(__file__).resolve().parents[1] / "src/agent_runtime/interactive_host.py").read_text(encoding="utf-8")
-    assert 'last_seen: list[str] = []' in source
-    assert 'UIA={detail}' in source
-    assert 'Win32={native}' in source
+def test_dialog_discovery_timeout_is_bounded_and_process_scoped():
+    import pytest
+    from agent_runtime.hardening.selectors import discover_dialog
+    start = time.monotonic()
+    with pytest.raises(TimeoutError,match='selected process'):
+        discover_dialog(SimpleNamespace(windows=lambda:[]),None,{'process_id':42,'timeout_seconds':0.1})
+    assert time.monotonic()-start < 1
 
 
-def test_dialog_discovery_uses_win32_fallback_and_active_hwnd():
-    source = (Path(__file__).resolve().parents[1] / "src/agent_runtime/interactive_host.py").read_text(encoding="utf-8")
-    assert "def _win32_dialog_handles()" in source
-    assert "desktop.window(handle=active_handle).wrapper_object()" in source
-    assert "for row in _win32_dialog_handles():" in source
-    assert "Win32={native}" in source
+def test_dialog_discovery_does_not_select_foreground_of_another_process():
+    from agent_runtime.hardening.selectors import discover_dialog
+    def window(pid, hwnd):
+        return SimpleNamespace(process_id=lambda:pid,handle=hwnd,is_visible=lambda:True,is_enabled=lambda:True,
+            class_name=lambda:'#32770',window_text=lambda:'Save',descendants=lambda:[SimpleNamespace(element_info=SimpleNamespace(automation_id='FileNameControlHost'))])
+    desktop = SimpleNamespace(windows=lambda:[window(99,99),window(42,42)],window=lambda handle:handle)
+    assert discover_dialog(desktop,None,{'process_id':42,'timeout_seconds':0.1}) == 42
 
 
-def test_dialog_classifier_does_not_use_broad_save_open_text_hints():
-    source = (Path(__file__).resolve().parents[1] / "src/agent_runtime/interactive_host.py").read_text(encoding="utf-8")
-    block = source[source.index('def _looks_like_file_dialog'):source.index('def _win32_dialog_handles')]
-    assert 'class_name == "#32770"' in block
-    assert 'FileNameControlHost' in block
-    assert 'hints =' not in block
+def test_dialog_classifier_requires_filename_controls():
+    from agent_runtime.hardening.selectors import looks_like_file_dialog
+    window = SimpleNamespace(is_visible=lambda:True,is_enabled=lambda:True,class_name=lambda:'Custom',
+        window_text=lambda:'Open and Save',descendants=lambda:[])
+    assert not looks_like_file_dialog(window)
+    window.descendants = lambda:[SimpleNamespace(element_info=SimpleNamespace(automation_id='FileNameControlHost'))]
+    assert looks_like_file_dialog(window)
 
 
-def test_file_dialog_accept_prefers_primary_automation_id_before_titles():
-    source = (Path(__file__).resolve().parents[1] / "src/agent_runtime/interactive_host.py").read_text(encoding="utf-8")
-    block = source[source.index('elif op == "file_dialog_accept":'):source.index('elif op == "file_dialog_cancel":')]
-    primary = block.index('button_automation_ids')
-    automation = block.index('automation_id', primary)
-    expected = block.index('expected = [title.casefold()', automation)
-    assert primary < automation < expected
-    assert '["1"]' in block
+def test_file_dialog_accept_does_not_retry_after_invoke_failure():
+    import pytest
+    from agent_runtime.hardening.selectors import accept_dialog
+    from agent_runtime.hardening.common import ControlError
+    calls = []
+    def invoke():
+        calls.append('invoke')
+        raise RuntimeError('response lost after click')
+    button = SimpleNamespace(element_info=SimpleNamespace(automation_id='1'),is_visible=lambda:True,is_enabled=lambda:True,
+        invoke=invoke,window_text=lambda:'Save')
+    filename = SimpleNamespace(element_info=SimpleNamespace(automation_id='1148'))
+    dialog = SimpleNamespace(is_visible=lambda:True,is_enabled=lambda:True,class_name=lambda:'#32770',
+        descendants=lambda **kwargs:[button] if kwargs else [button,filename])
+    with pytest.raises(ControlError,match='ambiguous'):
+        accept_dialog(dialog,{})
+    assert calls == ['invoke']
 

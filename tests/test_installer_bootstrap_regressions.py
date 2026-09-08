@@ -18,11 +18,10 @@ def test_bootstrap_configures_gh_as_git_credential_helper():
     assert "Authenticated GitHub user:" in text
 
 
-def test_failed_one_click_install_surfaces_persistent_log():
-    bat = (ROOT / "Install GPT Controller.bat").read_text(encoding="utf-8")
-    ps1 = (ROOT / "scripts" / "bootstrap-windows.ps1").read_text(encoding="utf-8")
-    assert "C:\\GPT-Controller\\logs\\install.log" in bat
-    assert "Get-Content" in bat
-    assert "install.log" in ps1
-    assert "Start-Transcript" in ps1
-    assert "GPT Controller installation FAILED." in ps1
+def test_candidate_wrappers_stage_without_activating_or_bootstrapping():
+    for name in ('Install GPT Controller.bat','Update GPT Controller.bat'):
+        text = (ROOT/name).read_text(encoding='utf-8')
+        assert 'install-candidate.ps1' in text
+        assert '-Activate' not in text
+        assert 'bootstrap-windows.ps1' not in text
+        assert 'Candidate is staged only.' in text

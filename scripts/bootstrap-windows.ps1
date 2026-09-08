@@ -54,7 +54,7 @@ function Test-PythonExecutable {
         if ($text -notmatch '^(\d+)\.(\d+)$') { return $false }
         $major = [int]$Matches[1]
         $minor = [int]$Matches[2]
-        return ($major -gt 3 -or ($major -eq 3 -and $minor -ge 10))
+        return ($major -gt 3 -or ($major -eq 3 -and $minor -ge 11))
     } catch {
         return $false
     }
@@ -108,7 +108,7 @@ function Ensure-Python {
     Refresh-Path
     $found = Find-Python
     if ($found) { return $found }
-    throw "Python 3.12 installation did not produce a usable Python 3.10+ interpreter (winget exit $wingetCode). If Windows Store aliases are enabled, disable the python.exe App Execution Alias or install Python from python.org, then retry."
+    throw "Python 3.12 installation did not produce a usable Python 3.11+ interpreter (winget exit $wingetCode). If Windows Store aliases are enabled, disable the python.exe App Execution Alias or install Python from python.org, then retry."
 }
 
 try {
@@ -134,6 +134,7 @@ try {
     New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
     $SourcePath = Join-Path $InstallRoot 'source'
     if (Test-Path (Join-Path $SourcePath '.git')) {
+        throw 'Existing source checkout detected. Bootstrap will not update running code; use the reviewed updater.'
         & $git -C $SourcePath fetch origin main
         if ($LASTEXITCODE -ne 0) { throw 'git fetch failed for installed GPT Controller source.' }
         & $git -C $SourcePath checkout main
@@ -141,7 +142,7 @@ try {
         & $git -C $SourcePath pull --ff-only origin main
         if ($LASTEXITCODE -ne 0) { throw 'git pull --ff-only failed.' }
     } else {
-        if (Test-Path $SourcePath) { Remove-Item -LiteralPath $SourcePath -Recurse -Force }
+        if ((Test-Path $SourcePath) -and @(Get-ChildItem -LiteralPath $SourcePath -Force).Count -gt 0) { throw 'Non-empty source directory will not be deleted.' }
         & $git clone --branch main --single-branch $SourceRemote $SourcePath
         if ($LASTEXITCODE -ne 0) { throw 'Failed to clone the public GPT Controller repository.' }
     }

@@ -1,0 +1,13 @@
+{
+  "version": "4.1.0rc2",
+  "base_commit": "90a6f329ea99ade3f08bc377936f3daf43a02774",
+  "base_tree": "158f8361cba27442fa5b7cb1b1d47f04f8940593",
+  "previous_zip_sha256": "3e2a05db4a8012c8142116cd71a2a780e1a12bb43fe12b8199f833b2dedc50be",
+  "verification_record": "verification/STATUS.json",
+  "test_results_embedded_in_build_record": false,
+  "all_audit_acceptance_complete": false,
+  "public_source_push": false,
+  "candidate_deployed_to_user_pc": false,
+  "windows_candidate_acceptance": "NOT_RUN",
+  "rebuild_tool": "developer/rebuild.py"
+}

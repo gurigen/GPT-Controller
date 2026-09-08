@@ -7,6 +7,7 @@ param(
     [switch]$SystemRuntime
 )
 $ErrorActionPreference = 'Stop'
+if (Test-Path (Join-Path $InstallRoot 'agent.config.json')) { throw 'Existing configuration detected. Use the repair/update path; bootstrap will not reset local settings.' }
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 
 function Test-IsAdministrator {
@@ -62,6 +63,7 @@ $ConfigPath = Join-Path $InstallRoot 'agent.config.json'
 $Branch = 'gpt-controller-control'
 $RemoteUrl = "https://github.com/$controlFullName.git"
 $probe = Invoke-Native -FilePath $git -Arguments @('ls-remote','--heads',$RemoteUrl,$Branch) -Capture -AllowFailure
+if ($probe.ExitCode -ne 0) { throw 'Control branch lookup failed. Existing data was NOT deleted or reinitialized.' }
 $branchExists = $probe.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace((($probe.Output | Out-String).Trim()))
 
 if ($branchExists) {
@@ -71,11 +73,11 @@ if ($branchExists) {
         Invoke-Native -FilePath $git -Arguments @('-C',$ControlPath,'checkout',$Branch) | Out-Null
         Invoke-Native -FilePath $git -Arguments @('-C',$ControlPath,'pull','--ff-only','origin',$Branch) | Out-Null
     } else {
-        if (Test-Path $ControlPath) { Remove-Item -LiteralPath $ControlPath -Recurse -Force }
+        if ((Test-Path $ControlPath) -and @(Get-ChildItem -LiteralPath $ControlPath -Force).Count -gt 0) { throw 'Non-empty control directory will not be deleted by bootstrap.' }
         Invoke-Native -FilePath $git -Arguments @('clone','--branch',$Branch,'--single-branch',$RemoteUrl,$ControlPath) | Out-Null
     }
 } else {
-    if (Test-Path $ControlPath) { Remove-Item -LiteralPath $ControlPath -Recurse -Force }
+    if ((Test-Path $ControlPath) -and @(Get-ChildItem -LiteralPath $ControlPath -Force).Count -gt 0) { throw 'Non-empty control directory will not be deleted by bootstrap.' }
     & (Join-Path $PSScriptRoot 'init-control-repo.ps1') -Path $ControlPath -RemoteUrl $RemoteUrl -Branch $Branch
 }
 
@@ -101,7 +103,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $InstallRoot 'scratch'),(Jo
 $config | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $ConfigPath -Encoding UTF8
 
 $agentExe = Join-Path $InstallRoot 'venv\Scripts\gpt-controller.exe'
-& $agentExe --config $ConfigPath --once
+& (Join-Path $InstallRoot 'venv\Scripts\python.exe') -m agent_runtime.hardening.cli --config $ConfigPath doctor
 if ($LASTEXITCODE -ne 0) { throw 'GPT Controller one-shot validation failed.' }
 if ($SystemRuntime) { & (Join-Path $PSScriptRoot 'install-service.ps1') -InstallRoot $InstallRoot -System } else { & (Join-Path $PSScriptRoot 'install-service.ps1') -InstallRoot $InstallRoot }
 if ($InstallInteractiveHost) { & (Join-Path $PSScriptRoot 'install-interactive-host.ps1') -InstallRoot $InstallRoot }

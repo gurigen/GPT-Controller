@@ -97,47 +97,11 @@ _WAKE_INPUT_DESKTOP_CODE = (
 
 
 def _ensure_default_input_desktop(config: Config, op: str) -> str:
-    # Wake a saver/lock surface and require Default before injecting user input.
     current = _input_desktop_name()
-    if current == "Default" and _cursor_accessible():
-        return current
-    if not config.allow_physical_input:
-        raise RuntimeError(
-            f"{op} cannot wake input desktop {current!r}: physical input is disabled"
-        )
-
-    helper = Path(sys.executable)
-    if helper.name.lower() == "pythonw.exe":
-        candidate = helper.with_name("python.exe")
-        if candidate.exists():
-            helper = candidate
-    completed = subprocess.run(
-        [str(helper), "-c", _WAKE_INPUT_DESKTOP_CODE],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=False,
-    )
-    if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout or "").strip()
-        raise RuntimeError(
-            f"{op} failed to wake input desktop {current!r}: "
-            f"helper exit {completed.returncode}: {detail}"
-        )
-
-    deadline = time.monotonic() + 6.0
-    while time.monotonic() < deadline:
-        current = _input_desktop_name()
-        if current == "Default" and _cursor_accessible():
-            time.sleep(0.15)
-            if _cursor_accessible():
-                return current
-        time.sleep(0.2)
-
-    raise RuntimeError(
-        f"{op} requires the Default input desktop, but active desktop remains {current!r}; "
-        "unlock the dedicated laptop or disable its lock requirement"
-    )
+    if current != "Default" or not _cursor_accessible():
+        from .hardening.common import ControlError
+        raise ControlError("needs_user", "unlock/activate the Windows session manually; no lock or UAC bypass")
+    return current
 
 
 _INTRUSIVE_UI_OPS = {
@@ -238,30 +202,9 @@ def _clipboard_set_text(text: str) -> None:
 
 
 def _paste_unicode(keyboard: Any, text: str) -> None:
-    previous = None
-    try:
-        previous = _clipboard_get_text()
-    except Exception:
-        previous = None
-    _clipboard_set_text(text)
-    keyboard.send_keys("^v", pause=0.02)
-    # Clipboard paste is consumed asynchronously by Explorer/common dialogs. Restoring
-    # the previous clipboard after only 50 ms can race the target and paste stale text.
-    # Keep the requested Unicode payload available long enough for the focused control
-    # to consume WM_PASTE before restoring the user's clipboard.
-    time.sleep(0.45)
-    try:
-        if previous is None:
-            import win32clipboard
-            win32clipboard.OpenClipboard()
-            try:
-                win32clipboard.EmptyClipboard()
-            finally:
-                win32clipboard.CloseClipboard()
-        else:
-            _clipboard_set_text(previous)
-    except Exception:
-        pass
+    from .hardening.desktop import send_unicode
+    from .hardening.host import check_input_continuation
+    send_unicode(text, check=check_input_continuation)
 
 
 def _wrapper(target: Any) -> Any:
@@ -310,38 +253,8 @@ def _best_dialog_edit(target: Any, automation_ids: list[str] | None = None) -> A
 
 
 def _looks_like_file_dialog(wrapper: Any) -> bool:
-    try:
-        if not wrapper.is_visible() or not wrapper.is_enabled():
-            return False
-    except Exception:
-        return False
-    try:
-        class_name = str(wrapper.class_name() or "")
-    except Exception:
-        class_name = ""
-    try:
-        descendants = list(wrapper.descendants())
-    except Exception:
-        descendants = []
-    automation_ids: set[str] = set()
-    names: list[str] = []
-    for item in descendants[:500]:
-        try:
-            automation_ids.add(str(getattr(item.element_info, "automation_id", "") or ""))
-            names.append(str(getattr(item.element_info, "name", "") or item.window_text() or "").casefold())
-        except Exception:
-            continue
-    # Native Windows common Open/Save dialogs use #32770. UIA descendants can be
-    # temporarily unavailable while the modal is being initialized, so requiring the
-    # filename descendants here creates a false negative even though the dialog itself
-    # is already visible and active. Ranking in _discover_dialog still prefers the
-    # foreground window and the parent application's process.
-    if class_name == "#32770":
-        return True
-    # Modern non-common dialogs must expose an actual filename control. Broad text
-    # matching is deliberately avoided because ordinary apps (including ChatGPT) may
-    # contain words such as Save/Open and become dangerous false positives.
-    return bool({"FileNameControlHost", "1001"} & automation_ids)
+    from .hardening.selectors import looks_like_file_dialog
+    return looks_like_file_dialog(wrapper)
 
 
 def _win32_dialog_handles() -> list[dict[str, Any]]:
@@ -379,155 +292,13 @@ def _win32_dialog_handles() -> list[dict[str, Any]]:
 
 
 def _discover_dialog(desktop: Any, current_window: Any, action: dict[str, Any]) -> Any:
-    timeout = max(0.1, min(float(action.get("timeout_seconds", 30)), 120.0))
-    deadline = time.monotonic() + timeout
-    kind = str(action.get("kind", "file")).casefold()
-    if kind not in {"file", "any"}:
-        raise ValueError("discover_dialog kind must be 'file' or 'any'")
-    title_contains = str(action.get("title_contains", "")).casefold()
-    title_re = str(action.get("title_re", ""))
-    class_names = {str(x).casefold() for x in action.get("class_names", []) if str(x)}
-
-    current = _wrapper(current_window) if current_window is not None else None
-    current_handle = None
-    current_pid = None
-    try:
-        current_handle = int(current.handle)
-    except Exception:
-        pass
-    try:
-        current_pid = int(current.process_id())
-    except Exception:
-        pass
-
-    def candidate_score(handle: int, pid: int, class_name: str, active_handle: int) -> tuple[int, int, int]:
-        return (
-            0 if active_handle and handle == active_handle else 1,
-            0 if current_pid and pid == current_pid else 1,
-            0 if class_name == "#32770" else 1,
-        )
-
-    def accepts(wrapper: Any, summary: dict[str, Any]) -> bool:
-        handle = int(summary.get("handle") or 0)
-        if current_handle and handle == current_handle:
-            return False
-        if not summary.get("visible") or not summary.get("enabled"):
-            return False
-        title = str(summary.get("title") or "")
-        class_name = str(summary.get("class_name") or "")
-        if title_contains and title_contains not in title.casefold():
-            return False
-        if title_re and not re.search(title_re, title, flags=re.IGNORECASE):
-            return False
-        if class_names and class_name.casefold() not in class_names:
-            return False
-        if kind == "file" and not _looks_like_file_dialog(wrapper):
-            return False
-        return True
-
-    last_seen: list[str] = []
-    while time.monotonic() < deadline:
-        active_handle = 0
-        try:
-            import win32gui
-            active_handle = int(win32gui.GetForegroundWindow() or 0)
-        except Exception:
-            pass
-
-        ranked: list[tuple[int, int, int, Any]] = []
-        seen_handles: set[int] = set()
-
-        # Fast path: foreground HWND is authoritative even when UIA's top-level enumeration
-        # temporarily omits a native modal dialog.
-        if active_handle and active_handle != current_handle:
-            try:
-                active = desktop.window(handle=active_handle).wrapper_object()
-                summary = _window_summary(active)
-                if accepts(active, summary):
-                    return desktop.window(handle=active_handle)
-            except Exception:
-                pass
-
-        try:
-            windows = list(desktop.windows())
-        except Exception:
-            windows = []
-        last_seen = []
-        for candidate in windows:
-            try:
-                summary = _window_summary(candidate)
-                handle = int(summary.get("handle") or 0)
-                if handle:
-                    seen_handles.add(handle)
-                if summary.get("visible"):
-                    last_seen.append(
-                        f"{summary.get('title')!r}/{summary.get('class_name')!r}/pid={summary.get('process_id')}"
-                    )
-                if not accepts(candidate, summary):
-                    continue
-                pid = int(summary.get("process_id") or 0)
-                class_name = str(summary.get("class_name") or "")
-                ranked.append((*candidate_score(handle, pid, class_name, active_handle), candidate))
-            except Exception:
-                continue
-
-        # Win32 fallback catches native modal dialogs that UIA Desktop.windows() can omit.
-        for row in _win32_dialog_handles():
-            handle = int(row.get("handle") or 0)
-            if not handle or handle in seen_handles or (current_handle and handle == current_handle):
-                continue
-            try:
-                candidate = desktop.window(handle=handle).wrapper_object()
-                summary = _window_summary(candidate)
-                if not accepts(candidate, summary):
-                    continue
-                pid = int(summary.get("process_id") or row.get("process_id") or 0)
-                class_name = str(summary.get("class_name") or row.get("class_name") or "")
-                ranked.append((*candidate_score(handle, pid, class_name, active_handle), candidate))
-            except Exception:
-                continue
-
-        if ranked:
-            ranked.sort(key=lambda row: row[:3])
-            return desktop.window(handle=int(ranked[0][3].handle))
-        time.sleep(0.15)
-
-    detail = "; ".join(last_seen[:12])
-    native = "; ".join(
-        f"{row.get('title')!r}/{row.get('class_name')!r}/pid={row.get('process_id')}"
-        for row in _win32_dialog_handles()[:12]
-    )
-    raise TimeoutError(
-        f"no matching {kind} dialog appeared within {timeout}s; UIA={detail}; Win32={native}"
-    )
+    from .hardening.selectors import discover_dialog
+    return discover_dialog(desktop, current_window, action)
 
 
 def _explorer_item(target: Any, name: str) -> Any:
-    wrapper = _wrapper(target)
-    name_fold = name.casefold()
-    try:
-        descendants = wrapper.descendants()
-    except Exception as exc:
-        raise RuntimeError(f"cannot enumerate Explorer items: {exc}") from exc
-    ranked: list[tuple[int, int, Any]] = []
-    type_rank = {"ListItem": 0, "DataItem": 0, "TreeItem": 2}
-    for item in descendants:
-        try:
-            control_type = str(getattr(item.element_info, "control_type", ""))
-            if control_type not in type_rank:
-                continue
-            title = str(item.window_text() or getattr(item.element_info, "name", "") or "")
-            folded = title.casefold()
-            if folded == name_fold:
-                ranked.append((0, type_rank[control_type], item))
-            elif name_fold in folded:
-                ranked.append((1, type_rank[control_type], item))
-        except Exception:
-            continue
-    if ranked:
-        ranked.sort(key=lambda row: (row[0], row[1]))
-        return ranked[0][2]
-    raise RuntimeError(f"Explorer item not found: {name}")
+    from .hardening.selectors import explorer_item
+    return explorer_item(target, name)
 
 
 def _force_foreground_window(handle: int) -> bool:
@@ -588,25 +359,8 @@ def _force_foreground_window(handle: int) -> bool:
 
 
 def _physical_focus_fallback(wrapper: Any, config: Config | None, op: str) -> bool:
-    if config is None or not config.allow_physical_input:
-        return False
-    try:
-        from pywinauto import mouse
-        _ensure_default_input_desktop(config, op)
-        rect = wrapper.rectangle()
-        width = max(1, int(rect.right) - int(rect.left))
-        height = max(1, int(rect.bottom) - int(rect.top))
-        x = int(rect.left) + min(max(width // 2, 20), max(width - 20, 20))
-        y = int(rect.top) + min(30, max(height // 4, 8))
-        mouse.click(button="left", coords=(x, y))
-        time.sleep(0.08)
-        try:
-            import win32gui
-            return int(win32gui.GetForegroundWindow()) == int(wrapper.handle)
-        except Exception:
-            return True
-    except Exception:
-        return False
+    # Never click an inferred title-bar point merely to acquire foreground.
+    return False
 
 
 def _focus_window(target: Any, config: Config | None = None, op: str = "focus") -> Any:
@@ -649,6 +403,13 @@ def _focus_window(target: Any, config: Config | None = None, op: str = "focus") 
 
 
 def execute_windows_ui(config: Config, step: dict[str, Any]) -> dict[str, Any]:
+    from .hardening.policy import local_ui_check
+    from .hardening.validation import validate_operation
+    from .hardening.desktop import set_dpi_awareness
+    set_dpi_awareness()
+    for operation in step.get("actions", []):
+        validate_operation(operation, False)
+    local_ui_check(config, step)
     actions = step.get("actions", [])
     intrusive = next(
         (str(action.get("op")) for action in actions if action.get("op") in _INTRUSIVE_UI_OPS),
@@ -685,6 +446,8 @@ def execute_windows_ui(config: Config, step: dict[str, Any]) -> dict[str, Any]:
         except Exception:
             pass
 
+        from .hardening.host import before_operation
+        before_operation(config, step, {"op": "sleep", "seconds": 0})
         app = Application(backend=backend).start(step["start"], timeout=start_timeout)
         window_spec = step.get("window", {})
         if window_spec:
@@ -746,10 +509,13 @@ def execute_windows_ui(config: Config, step: dict[str, Any]) -> dict[str, Any]:
     else:
         raise ValueError("windows.ui requires exactly one of connect, start, or desktop=true")
 
-    outputs: list[Any] = []
+    from .hardening.output import BoundedOutputs
+    outputs: list[Any] = BoundedOutputs(config.max_output_bytes)
 
     for action in step.get("actions", []):
         op = action["op"]
+        from .hardening.host import before_operation
+        before_operation(config, step, action)
         if op in _INTRUSIVE_UI_OPS:
             # Long GUI steps can outlive a saver transition or Explorer shell handoff.
             # Re-validate the input desktop immediately before every physical/foreground op.
@@ -794,59 +560,8 @@ def execute_windows_ui(config: Config, step: dict[str, Any]) -> dict[str, Any]:
         elif op == "file_dialog_accept":
             _require_physical_input(config, op)
             _require_foreground(config, op)
-            wrapper = _focus_window(target, config, op)
-            titles = [str(x) for x in (action.get("button_titles") or ["Save", "Open", "Select", "保存", "開く", "選択"])]
-            clicked = None
-            try:
-                if str(getattr(wrapper.element_info, "control_type", "")) == "Button":
-                    try:
-                        wrapper.invoke()
-                    except Exception:
-                        wrapper.click_input()
-                    clicked = str(wrapper.window_text() or "button")
-            except Exception:
-                pass
-            if clicked is None:
-                try:
-                    buttons = wrapper.descendants(control_type="Button")
-                except Exception:
-                    buttons = []
-                # Native common dialogs expose their primary accept button as automation id 1.
-                # Prefer that stable identifier before localized button text so unrelated child
-                # buttons such as a file-type "Open" control cannot be clicked by mistake.
-                primary_ids = {str(x) for x in (action.get("button_automation_ids") or ["1"])}
-                for button in buttons:
-                    try:
-                        automation_id = str(getattr(button.element_info, "automation_id", "") or "")
-                        if automation_id not in primary_ids or not button.is_visible() or not button.is_enabled():
-                            continue
-                        name = str(button.window_text() or getattr(button.element_info, "name", "") or "button")
-                        try:
-                            button.invoke()
-                        except Exception:
-                            button.click_input()
-                        clicked = name
-                        break
-                    except Exception:
-                        continue
-                if clicked is None:
-                    expected = [title.casefold() for title in titles]
-                    for button in buttons:
-                        try:
-                            name = str(button.window_text() or getattr(button.element_info, "name", "") or "")
-                            folded = name.casefold()
-                            if any(token == folded or token in folded for token in expected):
-                                try:
-                                    button.invoke()
-                                except Exception:
-                                    button.click_input()
-                                clicked = name
-                                break
-                        except Exception:
-                            continue
-            if clicked is None:
-                keyboard.send_keys("{ENTER}", pause=0.02)
-            outputs.append({"op": op, "button": clicked, "fallback_enter": clicked is None})
+            from .hardening.selectors import accept_dialog
+            outputs.append(accept_dialog(target, action))
         elif op == "file_dialog_cancel":
             _require_physical_input(config, op)
             _require_foreground(config, op)
@@ -873,20 +588,9 @@ def execute_windows_ui(config: Config, step: dict[str, Any]) -> dict[str, Any]:
             if not name:
                 raise ValueError(f"{op} requires name")
             item = _explorer_item(wrapper, name)
-            selected = False
-            try:
-                item.select()
-                selected = True
-            except Exception:
-                try:
-                    item.set_focus()
-                    keyboard.send_keys("{SPACE}", pause=0.02)
-                    selected = True
-                except Exception:
-                    pass
-            if not selected:
-                _ensure_default_input_desktop(config, op)
-                item.click_input()
+            item.select()
+            from .hardening.selectors import assert_single_selection
+            assert_single_selection(wrapper, item)
             if op == "explorer_open":
                 keyboard.send_keys("{ENTER}", pause=0.02)
             elif op == "explorer_rename":
@@ -1018,7 +722,7 @@ def execute_windows_ui(config: Config, step: dict[str, Any]) -> dict[str, Any]:
             outputs.append({"op": op})
         elif op in {"focus", "set_focus"}:
             _require_foreground(config, op)
-            target.set_focus()
+            _focus_window(target, config, op)
             outputs.append({"op": op})
         elif op == "maximize":
             _require_foreground(config, op)
@@ -1097,8 +801,10 @@ def execute_windows_ui(config: Config, step: dict[str, Any]) -> dict[str, Any]:
             button = str(action.get("button", "left"))
             mouse.move(coords=start)
             mouse.press(button=button, coords=start)
-            mouse.move(coords=end)
-            mouse.release(button=button, coords=end)
+            try:
+                mouse.move(coords=end)
+            finally:
+                mouse.release(button=button, coords=end)
             outputs.append({"op": op, "start": list(start), "end": list(end)})
         elif op == "hotkey":
             _require_physical_input(config, op)
@@ -1114,16 +820,9 @@ def execute_windows_ui(config: Config, step: dict[str, Any]) -> dict[str, Any]:
             text = action.get("text")
             if not isinstance(text, str):
                 raise ValueError("type_text requires a string text value")
-            previous = None
-            try:
-                previous = _clipboard_get_text()
-            except Exception:
-                previous = None
-            _clipboard_set_text(text)
-            keyboard.send_keys("^v", pause=float(action.get("pause", 0.02)))
-            time.sleep(float(action.get("settle_seconds", 0.05)))
-            if action.get("restore_clipboard", True) and previous is not None:
-                _clipboard_set_text(previous)
+            from .hardening.desktop import send_unicode
+            from .hardening.host import check_input_continuation
+            send_unicode(text, check=lambda: check_input_continuation(config, step, action))
             outputs.append({"op": op, "length": len(text)})
         elif op == "clipboard_get":
             outputs.append({"op": op, "text": _clipboard_get_text()})
@@ -1154,7 +853,9 @@ def execute_windows_ui(config: Config, step: dict[str, Any]) -> dict[str, Any]:
             else:
                 image = target.capture_as_image()
             image.save(path, format="PNG")
-            outputs.append({"op": op, "path": str(path), "size": list(image.size)})
+            from .hardening.desktop import display_metadata
+            import hashlib
+            outputs.append({"op": op, "path": str(path), "size": list(image.size), "pixel_sha256": hashlib.sha256(image.tobytes()).hexdigest(), "captured_unix": time.time(), "display": display_metadata() if op == "capture_desktop" else None})
         else:
             raise ValueError(f"unsupported windows.ui op: {op}")
 
@@ -1170,67 +871,8 @@ def execute_windows_ui(config: Config, step: dict[str, Any]) -> dict[str, Any]:
 
 
 def serve(config: Config) -> None:
-    requests = config.interactive_spool / "requests"
-    processing = config.interactive_spool / "processing"
-    responses = config.interactive_spool / "responses"
-    requests.mkdir(parents=True, exist_ok=True)
-    processing.mkdir(parents=True, exist_ok=True)
-    responses.mkdir(parents=True, exist_ok=True)
-
-    for processing_path in sorted(processing.glob("*.json")):
-        request_id = processing_path.stem
-        response_path = responses / f"{request_id}.json"
-        if not response_path.exists():
-            atomic_write_json(response_path, {
-                "protocol": "q-agent-v4-interactive-response",
-                "id": request_id,
-                "finished_at": utc_now(),
-                "status": "failed",
-                "error": "Interactive Host restarted after local claim; request is ambiguous and was NOT replayed.",
-            })
-        # A durable response resolves the local claim; never accumulate stale processing files.
-        processing_path.unlink(missing_ok=True)
-    log.info("Interactive Host started: %s", config.interactive_spool)
-    while True:
-        did_work = False
-        for request_path in sorted(requests.glob("*.json")):
-            did_work = True
-            request_id = request_path.stem
-            processing_path = processing / request_path.name
-            response_path = responses / f"{request_id}.json"
-            if response_path.exists():
-                request_path.unlink(missing_ok=True)
-                continue
-            try:
-                request_path.replace(processing_path)
-                request = load_json(processing_path)
-                if request.get("protocol") != "q-agent-v4-interactive-request":
-                    raise ValueError("invalid interactive request protocol")
-                step = request["step"]
-                if step.get("type") != "windows.ui":
-                    raise ValueError("interactive host accepts only windows.ui")
-                result = execute_windows_ui(config, step)
-                response = {
-                    "protocol": "q-agent-v4-interactive-response",
-                    "id": request_id,
-                    "finished_at": utc_now(),
-                    "status": "succeeded",
-                    "result": result,
-                }
-            except Exception as exc:
-                response = {
-                    "protocol": "q-agent-v4-interactive-response",
-                    "id": request_id,
-                    "finished_at": utc_now(),
-                    "status": "failed",
-                    "error": str(exc),
-                    "traceback": traceback.format_exc(limit=8),
-                }
-            atomic_write_json(response_path, response)
-            # Response publication is the commit point for this local interactive claim.
-            processing_path.unlink(missing_ok=True)
-        if not did_work:
-            time.sleep(0.25)
+    from .hardening.host import serve as hardened_serve
+    hardened_serve(config, execute_windows_ui)
 
 
 def main() -> None:

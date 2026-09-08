@@ -1,20 +1,18 @@
 @echo off
 setlocal
-set "SOURCE=C:\GPT-Controller\source"
-if not exist "%SOURCE%\scripts\update.ps1" set "SOURCE=%~dp0"
+cd /d "%~dp0"
 where pwsh.exe >nul 2>&1
 if errorlevel 1 (
-  echo PowerShell 7 is required. Run Install GPT Controller.bat to repair prerequisites.
+  echo PowerShell 7 is required to stage this reviewed candidate.
   pause
   exit /b 1
 )
-echo GPT Controller updater / repair
-echo.
-pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SOURCE%\scripts\update.ps1"
+echo Staging only. Existing PC tasks and permissions will not be changed.
+pwsh.exe -NoLogo -NoProfile -File "%~dp0scripts\install-candidate.ps1" -CandidateSource "%~dp0."
 set "RC=%ERRORLEVEL%"
-echo.
 if "%RC%"=="0" (
   echo Update finished successfully.
+  echo Candidate is staged only. Read HARDENING_README_JA.md before activation.
   exit /b 0
 )
 echo Update failed with exit code %RC%.

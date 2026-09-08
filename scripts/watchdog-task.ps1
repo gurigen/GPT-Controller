@@ -54,7 +54,14 @@ function Stop-RuntimeTree {
     $runtimePid = 0
     if ($Heartbeat -and [int]::TryParse([string]$Heartbeat.pid, [ref]$runtimePid) -and $runtimePid -gt 0) {
         try {
-            & taskkill.exe /PID $runtimePid /T /F *> $null
+            $live = Get-CimInstance Win32_Process -Filter "ProcessId=$runtimePid" -ErrorAction SilentlyContinue
+            $expectedConfig = Join-Path $InstallRoot 'agent.config.json'
+            $identityMatches = $live -and $live.CommandLine -and $live.CommandLine -match 'agent_runtime' -and $live.CommandLine.Contains($expectedConfig)
+            if ($identityMatches -and $Heartbeat.process_created_unix) {
+                $born = ([DateTimeOffset]$live.CreationDate).ToUnixTimeMilliseconds() / 1000.0
+                $identityMatches = [math]::Abs($born - [double]$Heartbeat.process_created_unix) -lt 1.0
+            }
+            if ($identityMatches) { & taskkill.exe /PID $runtimePid /T /F *> $null }
         }
         catch {}
     }

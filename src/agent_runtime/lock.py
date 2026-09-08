@@ -12,7 +12,7 @@ class RuntimeLock:
     def acquire(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.handle = open(self.path, "a+b")
-        self.handle.seek(0)
+        self.handle.seek(0, os.SEEK_END)
         if self.handle.tell() == 0:
             self.handle.write(b"0")
             self.handle.flush()

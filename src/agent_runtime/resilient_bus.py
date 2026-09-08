@@ -29,24 +29,15 @@ class ResilientGitBus(GitBus):
 
     @staticmethod
     def _porcelain_paths(text: str) -> list[str]:
-        paths: list[str] = []
-        for raw in text.splitlines():
-            if len(raw) < 4:
-                continue
-            path = raw[3:].strip().strip('"')
-            if " -> " in path:
-                left, right = path.split(" -> ", 1)
-                paths.extend([left.strip('"'), right.strip('"')])
-            else:
-                paths.append(path)
-        return paths
+        from .hardening.bus import porcelain_paths
+        return porcelain_paths(text)
 
     def repair_control_repo(self) -> bool:
         self._abort_interrupted_git_operation()
-        status = self._git("status", "--porcelain", check=False)
+        status = self._git("status", "--porcelain=v1", "-z", check=False)
         if status["exit_code"] != 0:
             raise RuntimeError(f"cannot inspect Agent control repo: {status['stderr'] or status['stdout']}")
-        dirty = status["stdout"].strip()
+        dirty = status["stdout"]
         if not dirty:
             return False
 
@@ -71,6 +62,8 @@ class ResilientGitBus(GitBus):
     def sync(self) -> None:
         self.repair_control_repo()
         super().sync()
+        from .hardening.bus import flush_outbox
+        flush_outbox(self)
 
     def _publish_recovery_commit(self, message: str) -> None:
         self._git("add", "queue", "results", "claims")
@@ -124,20 +117,7 @@ class ResilientGitBus(GitBus):
                 action_id = running.name.split(".")[0]
             if (self.repo / "results" / f"{action_id}.json").exists():
                 continue
-            resumable = bool(isinstance(action, dict) and action.get("resume_from_checkpoint") is True)
-            resumable = resumable and bool(action.get("steps")) and all(
-                isinstance(step, dict) and step.get("type") == "desktop.loop"
-                for step in action.get("steps", [])
-            )
-            if resumable:
-                pending = self.repo / "queue" / "pending" / f"{action_id}.json"
-                pending.parent.mkdir(parents=True, exist_ok=True)
-                if pending.exists():
-                    running.unlink()
-                else:
-                    running.replace(pending)
-                resumable_count += 1
-                continue
+            # No automatic requeue, even with resume_from_checkpoint: inspect side effects first.
 
             ambiguous = self.repo / "queue" / "ambiguous" / running.name
             ambiguous.parent.mkdir(parents=True, exist_ok=True)

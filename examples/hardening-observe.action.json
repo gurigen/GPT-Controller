@@ -1,0 +1,16 @@
+{
+  "protocol": "q-agent-v4",
+  "id": "observe-unique-001",
+  "target": {
+    "mode": "agent",
+    "agent": "my-pc"
+  },
+  "requires": [
+    "windows-ui"
+  ],
+  "steps": [
+    {
+      "type": "desktop.observe"
+    }
+  ]
+}

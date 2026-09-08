@@ -36,22 +36,13 @@ def configure_file_logging(log_path: Path, level: int = logging.INFO) -> None:
 
 
 def atomic_write_json(path: Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
-            json.dump(value, f, ensure_ascii=False, indent=2)
-            f.write("\n")
-        os.replace(temp, path)
-    finally:
-        if os.path.exists(temp):
-            os.unlink(temp)
+    from .hardening.common import atomic_json
+    atomic_json(path, value)
 
 
 def load_json(path: Path) -> Any:
-    # Windows PowerShell 5 writes UTF-8 with a BOM for Set-Content -Encoding utf8.
-    # utf-8-sig accepts both BOM and non-BOM UTF-8.
-    return json.loads(path.read_text(encoding="utf-8-sig"))
+    from .hardening.common import load_json as bounded_json
+    return bounded_json(path)
 
 
 def terminate_process_tree(process: subprocess.Popen[bytes], *, wait_seconds: float = 10.0) -> None:
@@ -98,56 +89,7 @@ def terminate_process_tree(process: subprocess.Popen[bytes], *, wait_seconds: fl
             pass
 
 
-def run_process(
-    argv: list[str],
-    cwd: Path | None = None,
-    timeout: int = 300,
-    env: dict[str, str] | None = None,
-    max_output_bytes: int = 2_000_000,
-) -> dict[str, Any]:
-    creationflags = 0
-    if os.name == "nt":
-        # GPT Controller is a background runtime. Console children such as git.exe and
-        # pwsh.exe must never flash visible windows while polling/executing.
-        creationflags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
-
-    process = subprocess.Popen(
-        argv,
-        cwd=str(cwd) if cwd else None,
-        env=env,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        shell=False,
-        creationflags=creationflags,
-        start_new_session=(os.name != "nt"),
-    )
-    timed_out = False
-    try:
-        stdout_bytes, stderr_bytes = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        timed_out = True
-        terminate_process_tree(process)
-        try:
-            stdout_bytes, stderr_bytes = process.communicate(timeout=5)
-        except subprocess.TimeoutExpired:
-            stdout_bytes, stderr_bytes = b"", b""
-
-    stdout_bytes = stdout_bytes or b""
-    stderr_bytes = stderr_bytes or b""
-    if timed_out:
-        timeout_message = f"GPT Controller terminated process tree after {timeout}s timeout."
-        if stderr_bytes and not stderr_bytes.endswith(b"\n"):
-            stderr_bytes += b"\n"
-        stderr_bytes += timeout_message.encode("utf-8") + b"\n"
-
-    stdout = stdout_bytes[:max_output_bytes].decode("utf-8", errors="replace")
-    stderr = stderr_bytes[:max_output_bytes].decode("utf-8", errors="replace")
-    return {
-        "exit_code": 124 if timed_out else process.returncode,
-        "stdout": stdout,
-        "stderr": stderr,
-        "stdout_truncated": len(stdout_bytes) > max_output_bytes,
-        "stderr_truncated": len(stderr_bytes) > max_output_bytes,
-        "timed_out": timed_out,
-    }
+def run_process(argv: list[str], cwd: Path | None = None, timeout: int = 300,
+                env: dict[str, str] | None = None, max_output_bytes: int = 2_000_000) -> dict[str, Any]:
+    from .hardening.processes import run_process as bounded_process
+    return bounded_process(argv, cwd, timeout, env, max_output_bytes)

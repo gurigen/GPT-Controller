@@ -1,3 +1,9 @@
+# Release candidate 4.1.0rc2 — read this first
+
+This is a locally built, NOT upstream-published hardening candidate. The q-agent-v4 wire name is retained, but retry, approval, GUI input, and installation behavior has changed. See [HARDENING_README_JA.md](HARDENING_README_JA.md) and [docs/HARDENING_CONTRACT.md](docs/HARDENING_CONTRACT.md) for the authoritative candidate contract. Windows acceptance and deployment are NOT completed. The original upstream notes below are retained for context, not as proof of candidate capabilities.
+
+---
+
 # GPT Controller
 
 **GPT Controller is a public Windows execution runtime that lets ChatGPT act as the controller of your own PC through a private GitHub command bus.**
@@ -146,10 +152,6 @@ Read [CHATGPT_CONTROLLER.md](CHATGPT_CONTROLLER.md), [CONTROLLER.md](CONTROLLER.
 
 MIT. See [LICENSE](LICENSE).
 
-## Maintained source and private command bus
+## Maintained source
 
-The maintained source for this distribution is `gurigen/GPT-Controller`.
-Fork ancestry and the original MIT license remain preserved; the upstream owner is not needed for normal operation.
-PC commands and results belong only in a separately configured **private** `gpt-controller-control` repository, never in this public source repository.
-
-This ownership migration changes source location and installation defaults, not the runtime version. The hardening release candidate is a separate deployment that must pass its own Windows acceptance.
+This distribution is maintained at `gurigen/GPT-Controller`. The original MIT license and upstream provenance are preserved. PC execution Actions and results must remain in the separately configured private control repository. This candidate requires its own acceptance; ownership-migration tests are not candidate acceptance.

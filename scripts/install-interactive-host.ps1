@@ -23,10 +23,12 @@ else {
     throw "interactive_host.run_level must be 'limited' or 'highest', got: $configuredRunLevel"
 }
 
-$spool = 'C:\ProgramData\GPT-Controller\interactive'
+$spool = [Environment]::ExpandEnvironmentVariables([string]$configData.interactive_host.spool)
+if ([string]::IsNullOrWhiteSpace($spool)) { throw 'interactive_host.spool is required' }
 New-Item -ItemType Directory -Force -Path "$spool\requests", "$spool\processing", "$spool\responses" | Out-Null
 $current = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-& icacls $spool /grant "${current}:(OI)(CI)M" /T /C | Out-Null
+& icacls $spool /inheritance:r /grant:r "${current}:(OI)(CI)M" "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" /T /C | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Failed to restrict interactive spool permissions' }
 
 # The Interactive Host itself must run in the signed-in user's session, but pythonw keeps
 # it console-free. Its interaction permissions are still controlled by the local policy.
@@ -87,7 +89,7 @@ if (-not (Test-Path -LiteralPath $systemPowerShell)) {
 }
 $watchdogAction = New-ScheduledTaskAction `
     -Execute $systemPowerShell `
-    -Argument "-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watchdogScript`" -TaskName `"$TaskName`" -InstallRoot `"$InstallRoot`" -MaintenancePath `"$maintenancePath`"" `
+    -Argument "-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watchdogScript`" -TaskName `"$TaskName`" -InstallRoot `"$InstallRoot`" -MaintenancePath `"$maintenancePath`" -HeartbeatPath `"$spool\host-heartbeat.json`" -HeartbeatMaxAgeSeconds 30 -StepTimeoutGraceSeconds 10" `
     -WorkingDirectory $InstallRoot
 $watchdogTrigger = New-ScheduledTaskTrigger `
     -Once `

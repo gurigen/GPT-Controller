@@ -3,54 +3,2468 @@
   "$id": "https://q-agent-v4.local/schema/action-v4.json",
   "title": "GPT Controller Action",
   "type": "object",
-  "required": ["protocol", "id", "steps"],
+  "required": [
+    "protocol",
+    "id",
+    "steps"
+  ],
   "properties": {
-    "protocol": {"const": "q-agent-v4"},
-    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
-    "created_at": {"type": "string", "format": "date-time"},
-    "expires_at": {"type": "string", "format": "date-time"},
-    "target_agent": {"type": "string"},
+    "protocol": {
+      "const": "q-agent-v4"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "target_agent": {
+      "type": "string"
+    },
     "target": {
       "oneOf": [
-        {"type": "object", "required": ["mode"], "properties": {"mode": {"const": "any"}}, "additionalProperties": true},
-        {"type": "object", "required": ["mode", "agent"], "properties": {"mode": {"const": "agent"}, "agent": {"type": "string", "minLength": 1}}, "additionalProperties": true},
-        {"type": "object", "required": ["mode", "order"], "properties": {"mode": {"const": "ordered"}, "order": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "fallback_after_seconds": {"type": "integer", "minimum": 0, "maximum": 3600}}, "additionalProperties": true}
+        {
+          "type": "object",
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "const": "any"
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "required": [
+            "mode",
+            "agent"
+          ],
+          "properties": {
+            "mode": {
+              "const": "agent"
+            },
+            "agent": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "required": [
+            "mode",
+            "order"
+          ],
+          "properties": {
+            "mode": {
+              "const": "ordered"
+            },
+            "order": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "fallback_after_seconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3600
+            }
+          },
+          "additionalProperties": true
+        }
       ]
     },
-    "requires": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-    "workspace": {"type": "string"},
-    "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 86400},
-    "resume_from_checkpoint": {"type": "boolean"},
-    "resume_attempts": {"type": "integer", "minimum": 1, "maximum": 10},
+    "requires": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "workspace": {
+      "type": "string"
+    },
+    "timeout_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 86400
+    },
+    "resume_from_checkpoint": {
+      "type": "boolean"
+    },
+    "resume_attempts": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10
+    },
     "steps": {
       "type": "array",
       "minItems": 1,
       "maxItems": 500,
       "items": {
         "type": "object",
-        "required": ["type"],
+        "required": [
+          "type"
+        ],
         "properties": {
           "type": {
             "enum": [
-              "noop", "agent.info", "powershell.exec", "process.exec",
-              "file.read", "file.write", "file.append", "file.mkdir",
-              "file.delete", "file.copy", "file.move", "git.exec",
-              "workspace.git_sync", "browser.playwright", "browser.interactive",
-              "windows.ui", "download.wait", "desktop.checkpoint", "desktop.loop", "deploy.exec"
+              "action.cancel",
+              "agent.doctor",
+              "agent.info",
+              "agent.manifest",
+              "approval.request",
+              "artifact.get",
+              "browser.interactive",
+              "browser.playwright",
+              "deploy.exec",
+              "desktop.act",
+              "desktop.checkpoint",
+              "desktop.loop",
+              "desktop.observe",
+              "desktop.pause",
+              "desktop.verify",
+              "download.wait",
+              "file.append",
+              "file.copy",
+              "file.delete",
+              "file.list",
+              "file.mkdir",
+              "file.move",
+              "file.read",
+              "file.stat",
+              "file.write",
+              "git.exec",
+              "goal.verify",
+              "noop",
+              "powershell.exec",
+              "process.exec",
+              "process.list",
+              "windows.ui",
+              "workspace.git_sync"
             ]
           },
-          "continue_on_error": {"type": "boolean"},
-          "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 86400}
+          "continue_on_error": {
+            "type": "boolean"
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400
+          }
         },
-        "additionalProperties": true
+        "additionalProperties": true,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "browser.playwright"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "actions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 500,
+                  "items": {
+                    "$ref": "#/$defs/browserOperation"
+                  }
+                }
+              },
+              "required": [
+                "actions"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "windows.ui"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "actions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 500,
+                  "items": {
+                    "$ref": "#/$defs/uiOperation"
+                  }
+                }
+              },
+              "required": [
+                "actions"
+              ]
+            }
+          }
+        ]
       }
+    },
+    "depends_on": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "required": [
+          "action_id",
+          "action_sha256"
+        ],
+        "properties": {
+          "action_id": {
+            "type": "string"
+          },
+          "action_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "not_before": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "goal": {
+      "type": "object",
+      "required": [
+        "description",
+        "conditions"
+      ],
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conditions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100
+        }
+      },
+      "additionalProperties": false
     }
   },
   "allOf": [
     {
-      "if": {"properties": {"target": {"properties": {"mode": {"const": "ordered"}}, "required": ["mode"]}}, "required": ["target"]},
-      "then": {"required": ["created_at"]}
+      "if": {
+        "properties": {
+          "target": {
+            "properties": {
+              "mode": {
+                "const": "ordered"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "then": {
+        "required": [
+          "created_at"
+        ]
+      }
     }
   ],
-  "additionalProperties": true
+  "additionalProperties": true,
+  "$defs": {
+    "browserOperation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "name": {
+              "type": "string"
+            },
+            "op": {
+              "const": "attribute"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "bring_to_front"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "check"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "click"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "click_popup"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {},
+            "wait_until": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "allow_borrowed_close": {
+              "type": "boolean"
+            },
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "close_page"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "content"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "cookies": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "cookies_add"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "cookies_clear"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "cookies_get"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {},
+            "urls": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "count"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "dblclick"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "download"
+            },
+            "save_as": {
+              "type": "string"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "arg": {},
+            "expression": {
+              "type": "string"
+            },
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "evaluate"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "fill"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "text": {
+              "type": "string"
+            },
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "goto"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {},
+            "url": {
+              "type": "string"
+            },
+            "wait_until": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "hover"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "input_value"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "new_page"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "pages"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "format": {
+              "type": "string"
+            },
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "pdf"
+            },
+            "path": {
+              "type": "string"
+            },
+            "print_background": {
+              "type": "boolean"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "press"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "reload"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {},
+            "wait_until": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "full_page": {
+              "type": "boolean"
+            },
+            "metadata": {},
+            "op": {
+              "const": "screenshot"
+            },
+            "path": {
+              "type": "string"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "index": {},
+            "label": {},
+            "metadata": {},
+            "op": {
+              "const": "select_option"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {},
+            "value": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "sleep"
+            },
+            "seconds": {},
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "snapshot"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "storage_state"
+            },
+            "path": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "index": {},
+            "metadata": {},
+            "op": {
+              "const": "switch_page"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "match": {},
+            "metadata": {},
+            "op": {
+              "const": "switch_page_matching"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "text"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "title"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "uncheck"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "files": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "upload"
+            },
+            "path": {
+              "type": "string"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "url"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "wait_for"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "state": {
+              "type": "string"
+            },
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "arg": {},
+            "expression": {
+              "type": "string"
+            },
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "wait_for_function"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "wait_for_load_state"
+            },
+            "settle_seconds": {},
+            "state": {
+              "type": "string"
+            },
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "wait_for_text"
+            },
+            "settle_seconds": {},
+            "text": {
+              "type": "string"
+            },
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "frame": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "wait_for_url"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {},
+            "url": {
+              "type": "string"
+            },
+            "wait_until": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "uiOperation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "active_window"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "name": {
+              "type": "string"
+            },
+            "op": {
+              "const": "capture"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "name": {
+              "type": "string"
+            },
+            "op": {
+              "const": "capture_desktop"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "click"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "button": {
+              "type": "string"
+            },
+            "control": {},
+            "coords": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer",
+                "minimum": -100000,
+                "maximum": 100000
+              }
+            },
+            "metadata": {},
+            "op": {
+              "const": "click_at"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "button": {
+              "type": "string"
+            },
+            "control": {},
+            "coords": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer",
+                "minimum": -100000,
+                "maximum": 100000
+              }
+            },
+            "double": {
+              "type": "boolean"
+            },
+            "metadata": {},
+            "op": {
+              "const": "click_input"
+            },
+            "pressed": {},
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {},
+            "wheel_dist": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "clipboard_get"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "clipboard_set"
+            },
+            "settle_seconds": {},
+            "text": {
+              "type": "string"
+            },
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "close"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "collapse"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "cursor_position"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "class_names": {},
+            "control": {},
+            "kind": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "discover_dialog"
+            },
+            "process_id": {},
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {},
+            "title": {
+              "type": "string"
+            },
+            "title_contains": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "button": {
+              "type": "string"
+            },
+            "control": {},
+            "coords": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer",
+                "minimum": -100000,
+                "maximum": 100000
+              }
+            },
+            "metadata": {},
+            "op": {
+              "const": "double_click_at"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "button": {
+              "type": "string"
+            },
+            "control": {},
+            "end": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer",
+                "minimum": -100000,
+                "maximum": 100000
+              }
+            },
+            "metadata": {},
+            "op": {
+              "const": "drag"
+            },
+            "settle_seconds": {},
+            "start": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer",
+                "minimum": -100000,
+                "maximum": 100000
+              }
+            },
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "max_depth": {},
+            "max_nodes": {},
+            "metadata": {},
+            "op": {
+              "const": "dump_tree"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "exists"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "expand"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "name": {
+              "type": "string"
+            },
+            "op": {
+              "const": "explorer_copy"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "name": {
+              "type": "string"
+            },
+            "op": {
+              "const": "explorer_cut"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "name": {
+              "type": "string"
+            },
+            "op": {
+              "const": "explorer_delete"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "explorer_navigate"
+            },
+            "path": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "name": {
+              "type": "string"
+            },
+            "op": {
+              "const": "explorer_new_folder"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "name": {
+              "type": "string"
+            },
+            "op": {
+              "const": "explorer_open"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "explorer_paste"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "name": {
+              "type": "string"
+            },
+            "new_name": {
+              "type": "string"
+            },
+            "op": {
+              "const": "explorer_rename"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "name": {
+              "type": "string"
+            },
+            "op": {
+              "const": "explorer_select"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "button_automation_ids": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "file_dialog_accept"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "file_dialog_cancel"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "automation_ids": {},
+            "control": {},
+            "filename": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "file_dialog_filename"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "file_dialog_path"
+            },
+            "path": {
+              "type": "string"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "focus"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "get_rect"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "get_text"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "keys": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "hotkey"
+            },
+            "pause": {},
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "input_desktop"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "invoke"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "is_enabled"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "is_visible"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "class_name": {
+              "type": "string"
+            },
+            "control": {},
+            "limit": {},
+            "metadata": {},
+            "op": {
+              "const": "list_windows"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {},
+            "title_contains": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "maximize"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "minimize"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "coords": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer",
+                "minimum": -100000,
+                "maximum": 100000
+              }
+            },
+            "metadata": {},
+            "op": {
+              "const": "move_mouse"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "height": {},
+            "metadata": {},
+            "op": {
+              "const": "move_resize"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {},
+            "width": {},
+            "x": {},
+            "y": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "restore"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "coords": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer",
+                "minimum": -100000,
+                "maximum": 100000
+              }
+            },
+            "metadata": {},
+            "op": {
+              "const": "right_click_at"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "coords": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "integer",
+                "minimum": -100000,
+                "maximum": 100000
+              }
+            },
+            "metadata": {},
+            "op": {
+              "const": "scroll"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {},
+            "wheel_dist": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "select"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "set_focus"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "set_text"
+            },
+            "settle_seconds": {},
+            "text": {
+              "type": "string"
+            },
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "set_value"
+            },
+            "settle_seconds": {},
+            "text": {
+              "type": "string"
+            },
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "sleep"
+            },
+            "seconds": {},
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "summary"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "toggle"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "keys": {
+              "type": "string"
+            },
+            "metadata": {},
+            "op": {
+              "const": "type_keys"
+            },
+            "pause": {},
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {},
+            "with_newlines": {
+              "type": "boolean"
+            },
+            "with_spaces": {
+              "type": "boolean"
+            },
+            "with_tabs": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "type_text"
+            },
+            "pause": {},
+            "restore_clipboard": {
+              "type": "boolean"
+            },
+            "settle_seconds": {},
+            "text": {
+              "type": "string"
+            },
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "wait_ready"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after_seconds": {},
+            "control": {},
+            "metadata": {},
+            "op": {
+              "const": "wait_visible"
+            },
+            "settle_seconds": {},
+            "timeout_ms": {},
+            "timeout_seconds": {}
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
 }
