@@ -50,7 +50,7 @@ def test_public_export_does_not_ship_private_migration_cleanup():
 
 def test_chatgpt_entrypoint_separates_public_source_from_private_control_repo():
     text = (ROOT / "CHATGPT_CONTROLLER.md").read_text(encoding="utf-8")
-    assert "umimi893/GPT-Controller" in text
+    assert "gurigen/GPT-Controller" in text
     assert "public source repository" in text
     assert "gpt-controller-control" in text
     assert '"protocol": "q-agent-v4"' in text

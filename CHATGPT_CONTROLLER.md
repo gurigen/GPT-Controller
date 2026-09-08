@@ -10,7 +10,7 @@ Ask the user for the private control repository name if it is not already known.
 <github-user>/gpt-controller-control
 ```
 
-The source repository `umimi893/GPT-Controller` is public code only. **Do not write Actions to the public source repository.**
+The source repository `gurigen/GPT-Controller` is public code only. **Do not write Actions to the public source repository.**
 
 Canonical route:
 

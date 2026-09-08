@@ -145,3 +145,11 @@ Read [CHATGPT_CONTROLLER.md](CHATGPT_CONTROLLER.md), [CONTROLLER.md](CONTROLLER.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Maintained source and private command bus
+
+The maintained source for this distribution is `gurigen/GPT-Controller`.
+Fork ancestry and the original MIT license remain preserved; the upstream owner is not needed for normal operation.
+PC commands and results belong only in a separately configured **private** `gpt-controller-control` repository, never in this public source repository.
+
+This ownership migration changes source location and installation defaults, not the runtime version. The hardening release candidate is a separate deployment that must pass its own Windows acceptance.

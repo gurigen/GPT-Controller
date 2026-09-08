@@ -1,6 +1,6 @@
 param(
     [string]$InstallRoot = 'C:\GPT-Controller',
-    [string]$SourceRemote = 'https://github.com/umimi893/GPT-Controller.git',
+    [string]$SourceRemote = 'https://github.com/gurigen/GPT-Controller.git',
     [switch]$Elevated
 )
 $ErrorActionPreference = 'Stop'
